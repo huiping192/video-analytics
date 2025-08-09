@@ -79,6 +79,7 @@ class FPSAnalyzer:
     def __init__(self, sample_interval: float = 10.0):
         self.sample_interval = sample_interval
         self.drop_threshold = 0.8  # 低于80%的期望帧率认为有掉帧
+        self.vfr_threshold = 0.1   # FPS变异系数超过10%认为是VFR视频
     
     def analyze(self, processed_file: ProcessedFile) -> FPSAnalysis:
         """分析视频FPS"""
@@ -156,10 +157,7 @@ class FPSAnalyzer:
     
     def _analyze_fps_window(self, file_path: str, timestamp: float, expected_fps: float, 
                            window_size: float = 5.0) -> FPSDataPoint:
-        """分析指定时间窗口的FPS"""
-        # 简化的FPS分析 - 基于元数据的稳定帧率假设
-        # 对于大多数现代视频，帧率是相对稳定的（CBR模式）
-        
+        """分析指定时间窗口的真实FPS"""
         try:
             # 检查这个时间点是否超出文件时长
             metadata = self._get_file_metadata(file_path)
@@ -174,26 +172,42 @@ class FPSAnalyzer:
                     dropped_frames=0
                 )
             
-            # 基于声明帧率计算窗口内的预期帧数
-            window_expected_frames = int(expected_fps * window_size)
+            # 获取真实帧时间戳
+            frame_times = self._get_frame_timestamps(file_path, timestamp, window_size)
             
-            # 简化的FPS分析 - 假设帧率稳定
-            # 在实际应用中，这对于大多数视频都是合理的假设
-            actual_fps = expected_fps
+            if not frame_times:
+                # 无法获取帧时间戳，使用fallback
+                return self._fallback_fps_data_point(timestamp, expected_fps, window_size)
             
-            # 简化的掉帧检测 - 基于统计分析
-            # 对于稳定的视频，通常不会有掉帧
-            dropped_frames = 0
+            # 计算实际帧数
+            actual_frame_count = len(frame_times)
+            
+            # 计算实际FPS
+            if len(frame_times) > 1:
+                # 基于实际时间跨度计算FPS
+                time_span = frame_times[-1] - frame_times[0]
+                if time_span > 0:
+                    actual_fps = (actual_frame_count - 1) / time_span
+                else:
+                    actual_fps = expected_fps
+            else:
+                actual_fps = expected_fps
+            
+            # 检测掉帧
+            dropped_frames = self._detect_dropped_frames_in_window(
+                frame_times, expected_fps, window_size
+            )
             
             return FPSDataPoint(
                 timestamp=timestamp,
                 fps=actual_fps,
-                frame_count=window_expected_frames,
+                frame_count=actual_frame_count,
                 dropped_frames=dropped_frames
             )
             
-        except Exception:
-            # 所有异常都使用备选方法
+        except Exception as e:
+            print(f"警告: 时间点 {timestamp:.1f}s 真实FPS分析失败: {e}")
+            # 异常情况下使用备选方法
             return self._fallback_fps_data_point(timestamp, expected_fps, window_size)
     
     def _fallback_fps_data_point(self, timestamp: float, expected_fps: float, window_size: float) -> FPSDataPoint:
@@ -218,8 +232,103 @@ class FPSAnalyzer:
         except Exception:
             return {'duration': 0}
     
+    def _get_frame_timestamps(self, file_path: str, start_time: float, window_size: float) -> List[float]:
+        """获取指定时间窗口内的真实帧时间戳"""
+        end_time = start_time + window_size
+        
+        try:
+            # 使用ffprobe获取帧时间戳
+            cmd = [
+                'ffprobe',
+                '-v', 'quiet',
+                '-select_streams', 'v:0',
+                '-show_entries', 'packet=pts_time',
+                '-of', 'csv=nk=1:nokey=1',
+                '-read_intervals', f'{start_time}%+#{int(window_size * 30)}',  # 估算最多30fps
+                file_path
+            ]
+            
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+            
+            if result.returncode != 0:
+                # 尝试备选命令格式
+                cmd_backup = [
+                    'ffprobe',
+                    '-v', 'quiet',
+                    '-select_streams', 'v:0',
+                    '-show_frames',
+                    '-show_entries', 'frame=pkt_pts_time',
+                    '-of', 'csv=nk=1',
+                    '-ss', str(start_time),
+                    '-t', str(window_size),
+                    file_path
+                ]
+                
+                result_backup = subprocess.run(cmd_backup, capture_output=True, text=True, timeout=30)
+                if result_backup.returncode != 0:
+                    return []
+                
+                # 解析frame格式输出
+                frame_times = []
+                for line in result_backup.stdout.strip().split('\n'):
+                    if line and ',' in line:
+                        try:
+                            # 提取pkt_pts_time字段
+                            parts = line.split(',')
+                            if len(parts) >= 2:
+                                pts_time = float(parts[1]) if parts[1] else 0
+                                if start_time <= pts_time <= end_time:
+                                    frame_times.append(pts_time)
+                        except (ValueError, IndexError):
+                            continue
+                return sorted(frame_times)
+            
+            # 解析时间戳
+            frame_times = []
+            for line in result.stdout.strip().split('\n'):
+                if line:
+                    try:
+                        # 处理 "packet,time_value" 格式
+                        if ',' in line:
+                            pts_time = float(line.split(',')[1].strip())
+                        else:
+                            pts_time = float(line.strip())
+                        
+                        # 只保留窗口内的时间戳
+                        if start_time <= pts_time <= end_time:
+                            frame_times.append(pts_time)
+                    except (ValueError, IndexError):
+                        continue
+            
+            return sorted(frame_times)
+            
+        except (subprocess.TimeoutExpired, subprocess.SubprocessError, Exception) as e:
+            # 如果ffprobe失败，返回空列表
+            print(f"帧时间戳获取失败: {e}")
+            return []
+    
+    def _detect_dropped_frames_in_window(self, frame_times: List[float], expected_fps: float, 
+                                        window_size: float) -> int:
+        """检测时间窗口内的掉帧数"""
+        if len(frame_times) < 2 or expected_fps <= 0:
+            return 0
+        
+        expected_interval = 1.0 / expected_fps
+        tolerance = expected_interval * 0.3  # 30%容差，更精确
+        
+        dropped_count = 0
+        for i in range(1, len(frame_times)):
+            actual_interval = frame_times[i] - frame_times[i-1]
+            
+            # 如果间隔明显大于期望间隔，估算掉帧数
+            if actual_interval > expected_interval + tolerance:
+                estimated_drops = round(actual_interval / expected_interval) - 1
+                dropped_count += max(0, estimated_drops)
+        
+        return dropped_count
+    
     def _detect_dropped_frames(self, frame_times: List[float], expected_fps: float) -> int:
-        """简单的掉帧检测"""
+        """传统的掉帧检测方法（保持向后兼容）"""
         if len(frame_times) < 2 or expected_fps <= 0:
             return 0
         
@@ -237,13 +346,35 @@ class FPSAnalyzer:
         
         return dropped_count
     
+    def _detect_vfr(self, analysis: FPSAnalysis) -> bool:
+        """检测是否为可变帧率（VFR）视频"""
+        if not analysis.data_points or analysis.actual_average_fps == 0:
+            return False
+        
+        fps_values = [dp.fps for dp in analysis.data_points if dp.fps > 0]
+        if len(fps_values) < 2:
+            return False
+        
+        # 计算变异系数（CV = 标准差/均值）
+        fps_std = np.std(fps_values)
+        fps_mean = np.mean(fps_values)
+        
+        if fps_mean > 0:
+            cv = fps_std / fps_mean
+            return cv > self.vfr_threshold
+        
+        return False
+    
     def analyze_fps_quality(self, analysis: FPSAnalysis) -> dict:
         """分析FPS质量"""
+        is_vfr = self._detect_vfr(analysis)
+        
         quality_report = {
             "performance_grade": analysis.performance_grade,
             "fps_consistency": f"{analysis.fps_stability:.1%}",
             "drop_rate": f"{analysis.drop_rate:.2%}",
             "fps_accuracy": self._calculate_fps_accuracy(analysis),
+            "is_vfr": is_vfr,
             "issues": [],
             "recommendations": []
         }
@@ -254,12 +385,23 @@ class FPSAnalyzer:
             quality_report["recommendations"].append("检查视频编码设置或源文件质量")
         
         if analysis.fps_stability < 0.9:  # 稳定性低于90%
-            quality_report["issues"].append("帧率不够稳定")
-            quality_report["recommendations"].append("可能存在VFR编码或性能问题")
+            if is_vfr:
+                quality_report["issues"].append("检测到可变帧率(VFR)编码")
+                quality_report["recommendations"].append("VFR视频正常，但可能影响播放兼容性")
+            else:
+                quality_report["issues"].append("帧率不够稳定")
+                quality_report["recommendations"].append("可能存在编码问题或播放性能问题")
         
         fps_diff = abs(analysis.declared_fps - analysis.actual_average_fps)
         if fps_diff > 1.0:  # 声明帧率与实际帧率差异大于1fps
             quality_report["issues"].append(f"实际帧率与声明帧率差异较大: {fps_diff:.1f}fps")
+            if is_vfr:
+                quality_report["recommendations"].append("VFR视频的帧率差异属于正常现象")
+            else:
+                quality_report["recommendations"].append("检查视频编码参数设置")
+        
+        if is_vfr:
+            quality_report["recommendations"].append("VFR视频建议转换为CFR格式以提高兼容性")
         
         if not quality_report["issues"]:
             quality_report["recommendations"].append("FPS表现良好，无需改进")
