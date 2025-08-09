@@ -137,16 +137,15 @@ class VideoBitrateAnalyzer:
         end_time = start_time + window_size
         
         try:
-            # Use ffprobe to get frame data in window
+            # Use ffprobe to get packet data in window
             cmd = [
                 'ffprobe',
                 '-v', 'quiet',
-                '-ss', str(start_time),
-                '-t', str(window_size),
-                '-i', file_path,
+                '-show_packets',
                 '-select_streams', 'v:0',
-                '-show_entries', 'frame=pkt_size',
-                '-of', 'csv=p=0'
+                '-show_entries', 'packet=size,pts_time',
+                '-of', 'csv=p=0',
+                file_path
             ]
             
             result = subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=30)
@@ -157,23 +156,40 @@ class VideoBitrateAnalyzer:
             
             lines = result.stdout.strip().split('\n')
             
-            # Sum bytes
+            # Sum bytes in time window
             total_bytes = 0
-            frame_count = 0
+            packet_count = 0
+            valid_timestamps = []
             
             for line in lines:
-                if line.strip():
+                if line.strip() and ',' in line:
                     try:
-                        frame_size = int(line.strip())
-                        total_bytes += frame_size
-                        frame_count += 1
-                    except ValueError:
+                        parts = line.strip().split(',')
+                        if len(parts) >= 2:
+                            pts_time_str, size_str = parts[0], parts[1]
+                            
+                            if pts_time_str and size_str:
+                                pts_time = float(pts_time_str)
+                                packet_size = int(size_str)
+                                
+                                # Filter packets in time window
+                                if start_time <= pts_time <= end_time:
+                                    total_bytes += packet_size
+                                    packet_count += 1
+                                    valid_timestamps.append(pts_time)
+                    except (ValueError, IndexError):
                         continue
             
-            if frame_count > 0:
-                # bitrate (bytes->bits, divide by window)
-                bitrate = (total_bytes * 8) / window_size
-                return bitrate
+            if packet_count > 0 and len(valid_timestamps) > 1:
+                # Calculate actual duration from timestamps
+                actual_duration = max(valid_timestamps) - min(valid_timestamps)
+                if actual_duration > 0:
+                    # bitrate = (total_bytes * 8) / actual_duration
+                    bitrate = (total_bytes * 8) / actual_duration
+                    return bitrate
+                else:
+                    # Single packet or same timestamp, use window size
+                    return (total_bytes * 8) / window_size
             else:
                 return self._get_fallback_bitrate(file_path)
                 

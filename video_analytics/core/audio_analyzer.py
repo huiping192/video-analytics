@@ -152,11 +152,10 @@ class AudioBitrateAnalyzer:
             cmd = [
                 'ffprobe',
                 '-v', 'quiet',
+                '-show_packets',
                 '-select_streams', 'a:0',
                 '-show_entries', 'packet=size,pts_time',
-                '-of', 'csv=nk=1',
-                '-ss', str(timestamp),
-                '-t', str(window_size),
+                '-of', 'csv=p=0',
                 file_path
             ]
             
@@ -176,11 +175,11 @@ class AudioBitrateAnalyzer:
                     try:
                         parts = line.split(',')
                         if len(parts) >= 2:
-                            size_str, pts_time_str = parts[0], parts[1]
+                            pts_time_str, size_str = parts[0], parts[1]
                             
                             if size_str and pts_time_str:
-                                packet_size = int(size_str)
                                 pts_time = float(pts_time_str)
+                                packet_size = int(size_str)
                                 
                                 # ensure inside window
                                 if timestamp <= pts_time <= end_time:
