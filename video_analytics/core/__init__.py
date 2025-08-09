@@ -1,11 +1,11 @@
 """
-Core module - 核心功能模块
+Core module
 
-包含视频分析的核心功能：
-- 文件处理
-- 视频分析
-- 音频分析
-- FPS分析
+Contains core functionality for video analytics:
+- File processing
+- Video bitrate analysis
+- Audio bitrate analysis
+- FPS analysis
 """
 
 from .file_processor import FileProcessor, ProcessedFile, VideoMetadata, safe_process_file

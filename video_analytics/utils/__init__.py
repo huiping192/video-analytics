@@ -1,5 +1,5 @@
 """
-Utils module - 工具模块
+Utils module
 
-提供通用的工具函数和辅助功能。
+Provides common utilities and helper functions.
 """

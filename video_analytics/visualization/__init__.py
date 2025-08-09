@@ -1,7 +1,7 @@
 """
-Visualization module - 可视化模块
+Visualization module
 
-提供图表生成和可视化功能。
+Provides chart generation and visualization functionality.
 """
 
 from .chart_generator import ChartGenerator, ChartConfig, ChartStyles

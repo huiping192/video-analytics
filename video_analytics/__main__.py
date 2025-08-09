@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """
-视频分析工具包入口
-允许使用 python -m video_analytics 运行
+Package entry point for running: python -m video_analytics
 """
 
 from .main import main

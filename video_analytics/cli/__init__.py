@@ -1,7 +1,7 @@
 """
-CLI module - 命令行接口模块
+CLI module
 
-提供命令行交互功能，包含主入口点和命令实现。
+Provides command-line interaction, including main entry point and command implementations.
 """
 
 from .main import main, app

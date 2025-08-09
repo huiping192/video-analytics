@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-CLI Commands - CLI命令实现
-包含所有视频分析工具的命令行接口实现
+CLI Commands - Command implementations for the video analytics tool.
+Provides all command-line interfaces for video, audio, FPS analysis and charting.
 """
 
 import sys
@@ -21,170 +21,170 @@ console = Console()
 
 
 def info_command(
-    file_path: str = typer.Argument(..., help="视频文件路径"),
-    verbose: bool = typer.Option(False, "--verbose", "-v", help="显示详细信息"),
-    simple: bool = typer.Option(False, "--simple", "-s", help="使用简化模式（不需要FFmpeg）")
+    file_path: str = typer.Argument(..., help="Video file path"),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Show verbose output"),
+    simple: bool = typer.Option(False, "--simple", "-s", help="Use simple mode (no FFmpeg)")
 ):
     """
-    显示视频文件的基本信息
+    Show basic information about the video file.
     """
-    console.print(f"[blue]正在分析文件:[/blue] {file_path}")
+    console.print(f"[blue]Analyzing file:[/blue] {file_path}")
     
     if simple:
-        # 使用简化模式
+        # Use simple mode
         from ..core.simple_processor import SimpleProcessedFile
         processed_file = SimpleProcessedFile(file_path)
     else:
-        # 使用完整的FFmpeg模式
+        # Use full FFmpeg processing mode
         processed_file = safe_process_file(file_path)
         if processed_file is None:
-            console.print("[red]文件处理失败[/red]")
+            console.print("[red]File processing failed[/red]")
             raise typer.Exit(1)
     
     metadata = processed_file.load_metadata()
     
-    # 创建信息表格
-    table = Table(title="视频文件信息")
-    table.add_column("属性", style="cyan", no_wrap=True)
-    table.add_column("值", style="magenta")
+    # Create info table
+    table = Table(title="Video File Information")
+    table.add_column("Property", style="cyan", no_wrap=True)
+    table.add_column("Value", style="magenta")
     
-    # 基本信息
-    table.add_row("文件路径", metadata.file_path)
-    table.add_row("文件大小", f"{metadata.file_size / 1024 / 1024:.1f} MB")
-    table.add_row("时长", f"{metadata.duration:.1f} 秒 ({metadata.duration/60:.1f} 分钟)")
-    table.add_row("容器格式", metadata.format_name)
-    table.add_row("总码率", f"{metadata.bit_rate / 1000:.0f} kbps")
+    # Basic information
+    table.add_row("File Path", metadata.file_path)
+    table.add_row("File Size", f"{metadata.file_size / 1024 / 1024:.1f} MB")
+    table.add_row("Duration", f"{metadata.duration:.1f} s ({metadata.duration/60:.1f} min)")
+    table.add_row("Container Format", metadata.format_name)
+    table.add_row("Overall Bitrate", f"{metadata.bit_rate / 1000:.0f} kbps")
     
-    # 视频信息
-    table.add_row("", "")  # 空行分隔
-    table.add_row("[bold]视频信息[/bold]", "")
-    table.add_row("视频编码", metadata.video_codec)
-    table.add_row("分辨率", f"{metadata.width}x{metadata.height}")
-    table.add_row("帧率", f"{metadata.fps:.2f} fps")
+    # Video information
+    table.add_row("", "")  # spacer
+    table.add_row("[bold]Video[/bold]", "")
+    table.add_row("Codec", metadata.video_codec)
+    table.add_row("Resolution", f"{metadata.width}x{metadata.height}")
+    table.add_row("Frame Rate", f"{metadata.fps:.2f} fps")
     if metadata.video_bitrate > 0:
-        table.add_row("视频码率", f"{metadata.video_bitrate / 1000:.0f} kbps")
+        table.add_row("Video Bitrate", f"{metadata.video_bitrate / 1000:.0f} kbps")
     
-    # 音频信息  
-    table.add_row("", "")  # 空行分隔
-    table.add_row("[bold]音频信息[/bold]", "")
-    table.add_row("音频编码", metadata.audio_codec)
-    table.add_row("声道数", str(metadata.channels))
-    table.add_row("采样率", f"{metadata.sample_rate} Hz")
+    # Audio information  
+    table.add_row("", "")  # spacer
+    table.add_row("[bold]Audio[/bold]", "")
+    table.add_row("Codec", metadata.audio_codec)
+    table.add_row("Channels", str(metadata.channels))
+    table.add_row("Sample Rate", f"{metadata.sample_rate} Hz")
     if metadata.audio_bitrate > 0:
-        table.add_row("音频码率", f"{metadata.audio_bitrate / 1000:.0f} kbps")
+        table.add_row("Audio Bitrate", f"{metadata.audio_bitrate / 1000:.0f} kbps")
     
     console.print(table)
     
     if verbose:
-        console.print("\n[green]✓ 文件分析完成[/green]")
+        console.print("\n[green]✓ File analysis complete[/green]")
 
 
 def validate_command(
-    file_path: str = typer.Argument(..., help="视频文件路径")
+    file_path: str = typer.Argument(..., help="Video file path")
 ):
     """
-    验证视频文件是否可以正常处理
+    Validate whether a video file can be processed.
     """
-    console.print(f"[blue]正在验证文件:[/blue] {file_path}")
+    console.print(f"[blue]Validating file:[/blue] {file_path}")
     
     try:
         processor = FileProcessor()
         processed_file = processor.process_input(file_path)
         metadata = processed_file.load_metadata()
         
-        console.print(f"[green]✓ 验证成功[/green]")
-        console.print(f"  时长: {metadata.duration:.1f}秒")
-        console.print(f"  分辨率: {metadata.width}x{metadata.height}")
-        console.print(f"  编码: {metadata.video_codec}")
+        console.print(f"[green]✓ Validation successful[/green]")
+        console.print(f"  Duration: {metadata.duration:.1f}s")
+        console.print(f"  Resolution: {metadata.width}x{metadata.height}")
+        console.print(f"  Codec: {metadata.video_codec}")
         
     except Exception as e:
-        console.print(f"[red]✗ 验证失败: {e}[/red]")
+        console.print(f"[red]✗ Validation failed: {e}[/red]")
         raise typer.Exit(1)
 
 
 def check_command():
     """
-    检查系统依赖是否满足
+    Check required system dependencies.
     """
-    console.print("[blue]检查系统依赖...[/blue]")
+    console.print("[blue]Checking system dependencies...[/blue]")
     
-    # 检查FFmpeg
+    # Check FFmpeg
     import subprocess
     try:
         result = subprocess.run(['ffmpeg', '-version'], 
                                capture_output=True, text=True, timeout=10)
         if result.returncode == 0:
-            version_line = result.stdout.split('\n')[0] if result.stdout else "未知版本"
-            console.print(f"[green]✓ FFmpeg 已安装 ({version_line})[/green]")
+            version_line = result.stdout.split('\n')[0] if result.stdout else "Unknown version"
+            console.print(f"[green]✓ FFmpeg installed ({version_line})[/green]")
         else:
-            console.print("[red]✗ FFmpeg 未正确安装[/red]")
+            console.print("[red]✗ FFmpeg not installed correctly[/red]")
     except subprocess.TimeoutExpired:
-        console.print("[red]✗ FFmpeg 响应超时[/red]")
+        console.print("[red]✗ FFmpeg timed out[/red]")
     except FileNotFoundError:
-        console.print("[red]✗ FFmpeg 未找到[/red]")
-        console.print("请安装 FFmpeg: https://ffmpeg.org/download.html")
+        console.print("[red]✗ FFmpeg not found[/red]")
+        console.print("Please install FFmpeg: https://ffmpeg.org/download.html")
     
-    # 检查Python依赖
+    # Check Python deps
     try:
         import ffmpeg
-        console.print("[green]✓ ffmpeg-python 已安装[/green]")
+        console.print("[green]✓ ffmpeg-python installed[/green]")
     except ImportError:
-        console.print("[red]✗ ffmpeg-python 未安装[/red]")
-        console.print("请运行: pip install ffmpeg-python")
+        console.print("[red]✗ ffmpeg-python not installed[/red]")
+        console.print("Run: pip install ffmpeg-python")
     
     try:
         import matplotlib
-        console.print("[green]✓ matplotlib 已安装[/green]")
+        console.print("[green]✓ matplotlib installed[/green]")
     except ImportError:
-        console.print("[red]✗ matplotlib 未安装[/red]")
-        console.print("请运行: pip install matplotlib")
+        console.print("[red]✗ matplotlib not installed[/red]")
+        console.print("Run: pip install matplotlib")
 
 
 def bitrate_command(
-    file_path: str = typer.Argument(..., help="视频文件路径"),
-    interval: float = typer.Option(10.0, "--interval", "-i", help="采样间隔(秒)"),
-    export_json: Optional[str] = typer.Option(None, "--json", help="导出JSON文件路径"),
-    export_csv: Optional[str] = typer.Option(None, "--csv", help="导出CSV文件路径"),
-    verbose: bool = typer.Option(False, "--verbose", "-v", help="显示详细信息")
+    file_path: str = typer.Argument(..., help="Video file path"),
+    interval: float = typer.Option(10.0, "--interval", "-i", help="Sampling interval (seconds)"),
+    export_json: Optional[str] = typer.Option(None, "--json", help="Export JSON file path"),
+    export_csv: Optional[str] = typer.Option(None, "--csv", help="Export CSV file path"),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Show verbose output")
 ):
     """
-    分析视频码率变化情况
+    Analyze video bitrate over time.
     """
-    console.print(f"[blue]正在分析视频码率:[/blue] {file_path}")
+    console.print(f"[blue]Analyzing video bitrate:[/blue] {file_path}")
     
     try:
-        # 处理视频文件
+        # Process video file
         processed_file = safe_process_file(file_path)
         if processed_file is None:
-            console.print("[red]文件处理失败[/red]")
+            console.print("[red]File processing failed[/red]")
             raise typer.Exit(1)
         
-        # 创建分析器并执行分析
+        # Create analyzer and run analysis
         analyzer = VideoBitrateAnalyzer(sample_interval=interval)
         analysis = analyzer.analyze(processed_file)
         
-        # 显示分析结果
-        table = Table(title="视频码率分析结果")
-        table.add_column("统计项", style="cyan", no_wrap=True)
-        table.add_column("值", style="magenta")
+        # Show analysis results
+        table = Table(title="Video Bitrate Analysis")
+        table.add_column("Metric", style="cyan", no_wrap=True)
+        table.add_column("Value", style="magenta")
         
-        table.add_row("文件路径", analysis.file_path)
-        table.add_row("视频时长", f"{analysis.duration:.1f} 秒 ({analysis.duration/60:.1f} 分钟)")
-        table.add_row("采样间隔", f"{analysis.sample_interval:.1f} 秒")
-        table.add_row("采样点数", str(len(analysis.data_points)))
-        table.add_row("", "")  # 空行分隔
+        table.add_row("File Path", analysis.file_path)
+        table.add_row("Video Duration", f"{analysis.duration:.1f} s ({analysis.duration/60:.1f} min)")
+        table.add_row("Sampling Interval", f"{analysis.sample_interval:.1f} s")
+        table.add_row("Sample Points", str(len(analysis.data_points)))
+        table.add_row("", "")  # spacer
         
-        # 码率统计
-        table.add_row("[bold]码率统计[/bold]", "")
-        table.add_row("平均码率", f"{analysis.average_bitrate/1000000:.2f} Mbps")
-        table.add_row("最大码率", f"{analysis.max_bitrate/1000000:.2f} Mbps")
-        table.add_row("最小码率", f"{analysis.min_bitrate/1000000:.2f} Mbps")
-        table.add_row("码率方差", f"{analysis.bitrate_variance/1000000000000:.2f} (Mbps²)")
-        table.add_row("编码类型", analysis.encoding_type)
+        # Bitrate statistics
+        table.add_row("[bold]Bitrate Statistics[/bold]", "")
+        table.add_row("Average Bitrate", f"{analysis.average_bitrate/1000000:.2f} Mbps")
+        table.add_row("Max Bitrate", f"{analysis.max_bitrate/1000000:.2f} Mbps")
+        table.add_row("Min Bitrate", f"{analysis.min_bitrate/1000000:.2f} Mbps")
+        table.add_row("Bitrate Variance", f"{analysis.bitrate_variance/1000000000000:.2f} (Mbps²)")
+        table.add_row("Encoding Type", analysis.encoding_type)
         
         console.print(table)
         
-        # 导出数据
+        # Export data
         if export_json:
             analyzer.export_analysis_data(analysis, export_json)
         
@@ -192,11 +192,11 @@ def bitrate_command(
             analyzer.export_to_csv(analysis, export_csv)
         
         if verbose:
-            console.print("\n[green]✓ 码率分析完成[/green]")
-            console.print(f"数据点范围: {analysis.data_points[0].timestamp:.1f}s - {analysis.data_points[-1].timestamp:.1f}s")
+            console.print("\n[green]✓ Bitrate analysis complete[/green]")
+            console.print(f"Data range: {analysis.data_points[0].timestamp:.1f}s - {analysis.data_points[-1].timestamp:.1f}s")
             
     except Exception as e:
-        console.print(f"[red]✗ 分析失败: {e}[/red]")
+        console.print(f"[red]✗ Analysis failed: {e}[/red]")
         if verbose:
             import traceback
             console.print(traceback.format_exc())
@@ -204,30 +204,30 @@ def bitrate_command(
 
 
 def batch_bitrate_command(
-    files: List[str] = typer.Argument(..., help="要分析的视频文件列表"),
-    interval: float = typer.Option(10.0, "--interval", "-i", help="采样间隔(秒)"),
-    output_dir: str = typer.Option("./output", "--output", "-o", help="输出目录")
+    files: List[str] = typer.Argument(..., help="List of video files to analyze"),
+    interval: float = typer.Option(10.0, "--interval", "-i", help="Sampling interval (seconds)"),
+    output_dir: str = typer.Option("./output", "--output", "-o", help="Output directory")
 ):
     """
-    批量分析多个视频文件的码率
+    Analyze bitrate for multiple videos.
     """
-    console.print(f"[blue]开始批量分析 {len(files)} 个视频文件[/blue]")
+    console.print(f"[blue]Starting batch analysis of {len(files)} video(s)[/blue]")
     
     import os
     from ..core.video_analyzer import analyze_multiple_videos
     
-    # 确保输出目录存在
+    # Ensure output dir exists
     os.makedirs(output_dir, exist_ok=True)
     
     try:
         results = analyze_multiple_videos(files, interval)
         
-        # 创建汇总表格
-        summary_table = Table(title="批量分析结果汇总")
-        summary_table.add_column("文件名", style="cyan")
-        summary_table.add_column("时长(分钟)", style="blue")
-        summary_table.add_column("平均码率(Mbps)", style="green")
-        summary_table.add_column("编码类型", style="yellow")
+        # Create summary table
+        summary_table = Table(title="Batch Analysis Summary")
+        summary_table.add_column("Filename", style="cyan")
+        summary_table.add_column("Duration (min)", style="blue")
+        summary_table.add_column("Avg Bitrate (Mbps)", style="green")
+        summary_table.add_column("Encoding", style="yellow")
         
         analyzer = VideoBitrateAnalyzer()
         for result in results:
@@ -243,7 +243,7 @@ def batch_bitrate_command(
                 encoding_type
             )
             
-            # 导出每个文件的分析结果
+            # Export each file's analysis results
             base_name = os.path.splitext(filename)[0]
             json_path = os.path.join(output_dir, f"{base_name}_bitrate.json")
             csv_path = os.path.join(output_dir, f"{base_name}_bitrate.csv")
@@ -252,78 +252,78 @@ def batch_bitrate_command(
             analyzer.export_to_csv(result, csv_path)
         
         console.print(summary_table)
-        console.print(f"\n[green]✓ 批量分析完成，结果已保存到 {output_dir}[/green]")
+        console.print(f"\n[green]✓ Batch analysis complete. Results saved to {output_dir}[/green]")
         
     except Exception as e:
-        console.print(f"[red]✗ 批量分析失败: {e}[/red]")
+        console.print(f"[red]✗ Batch analysis failed: {e}[/red]")
         raise typer.Exit(1)
 
 
 def audio_command(
-    file_path: str = typer.Argument(..., help="视频文件路径"),
-    interval: float = typer.Option(15.0, "--interval", "-i", help="采样间隔(秒)"),
-    export_json: Optional[str] = typer.Option(None, "--json", help="导出JSON文件路径"),
-    export_csv: Optional[str] = typer.Option(None, "--csv", help="导出CSV文件路径"),
-    verbose: bool = typer.Option(False, "--verbose", "-v", help="显示详细信息")
+    file_path: str = typer.Argument(..., help="Video file path"),
+    interval: float = typer.Option(15.0, "--interval", "-i", help="Sampling interval (seconds)"),
+    export_json: Optional[str] = typer.Option(None, "--json", help="Export JSON file path"),
+    export_csv: Optional[str] = typer.Option(None, "--csv", help="Export CSV file path"),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Show verbose output")
 ):
     """
-    分析音频码率变化情况
+    Analyze audio bitrate over time.
     """
-    console.print(f"[blue]正在分析音频码率:[/blue] {file_path}")
+    console.print(f"[blue]Analyzing audio bitrate:[/blue] {file_path}")
     
     try:
-        # 处理视频文件
+        # Process video file
         processed_file = safe_process_file(file_path)
         if processed_file is None:
-            console.print("[red]文件处理失败[/red]")
+            console.print("[red]File processing failed[/red]")
             raise typer.Exit(1)
         
-        # 创建分析器并执行分析
+        # Create analyzer and run analysis
         analyzer = AudioBitrateAnalyzer(sample_interval=interval)
         analysis = analyzer.analyze(processed_file)
         
-        # 显示分析结果
-        table = Table(title="音频码率分析结果")
-        table.add_column("统计项", style="cyan", no_wrap=True)
-        table.add_column("值", style="magenta")
+        # Show analysis results
+        table = Table(title="Audio Bitrate Analysis")
+        table.add_column("Metric", style="cyan", no_wrap=True)
+        table.add_column("Value", style="magenta")
         
-        table.add_row("文件路径", analysis.file_path)
-        table.add_row("音频时长", f"{analysis.duration:.1f} 秒 ({analysis.duration/60:.1f} 分钟)")
-        table.add_row("采样间隔", f"{analysis.sample_interval:.1f} 秒")
-        table.add_row("采样点数", str(len(analysis.data_points)))
-        table.add_row("", "")  # 空行分隔
+        table.add_row("File Path", analysis.file_path)
+        table.add_row("Audio Duration", f"{analysis.duration:.1f} s ({analysis.duration/60:.1f} min)")
+        table.add_row("Sampling Interval", f"{analysis.sample_interval:.1f} s")
+        table.add_row("Sample Points", str(len(analysis.data_points)))
+        table.add_row("", "")  # spacer
         
-        # 音频基本信息
-        table.add_row("[bold]音频信息[/bold]", "")
-        table.add_row("音频编码", analysis.codec)
-        table.add_row("声道配置", f"{analysis.channels}ch ({analyzer.get_channel_layout(analysis.channels)})")
-        table.add_row("采样率", f"{analysis.sample_rate} Hz")
-        table.add_row("", "")  # 空行分隔
+        # Audio info
+        table.add_row("[bold]Audio Info[/bold]", "")
+        table.add_row("Codec", analysis.codec)
+        table.add_row("Channels", f"{analysis.channels}ch ({analyzer.get_channel_layout(analysis.channels)})")
+        table.add_row("Sample Rate", f"{analysis.sample_rate} Hz")
+        table.add_row("", "")  # spacer
         
-        # 码率统计
-        table.add_row("[bold]码率统计[/bold]", "")
-        table.add_row("平均码率", f"{analysis.average_bitrate/1000:.1f} kbps")
-        table.add_row("最大码率", f"{analysis.max_bitrate/1000:.1f} kbps")
-        table.add_row("最小码率", f"{analysis.min_bitrate/1000:.1f} kbps")
-        table.add_row("码率稳定性", f"{analysis.bitrate_stability:.1%}")
-        table.add_row("音质等级", analysis.quality_level)
+        # Bitrate statistics
+        table.add_row("[bold]Bitrate Statistics[/bold]", "")
+        table.add_row("Average Bitrate", f"{analysis.average_bitrate/1000:.1f} kbps")
+        table.add_row("Max Bitrate", f"{analysis.max_bitrate/1000:.1f} kbps")
+        table.add_row("Min Bitrate", f"{analysis.min_bitrate/1000:.1f} kbps")
+        table.add_row("Bitrate Stability", f"{analysis.bitrate_stability:.1%}")
+        table.add_row("Quality Level", analysis.quality_level)
         
         console.print(table)
         
-        # 显示质量评估
+        # Show quality assessment
         quality = analyzer.assess_audio_quality(analysis)
         if verbose:
-            console.print("\n[bold]质量评估:[/bold]")
-            console.print(f"编码格式评价: {quality['codec_rating']}")
-            console.print(f"采样率评价: {quality['sample_rate_rating']}")
-            console.print(f"码率稳定性: {quality['stability']}")
+            console.print("\n[bold]Quality Assessment:[/bold]")
+            console.print(f"Codec rating: {quality['codec_rating']}")
+            console.print(f"Sample rate rating: {quality['sample_rate_rating']}")
+            console.print(f"Stability: {quality['stability']}")
             
             if quality['recommendations']:
-                console.print("\n[yellow]改进建议:[/yellow]")
+                console.print("\n[yellow]Recommendations:[/yellow]")
                 for rec in quality['recommendations']:
                     console.print(f"• {rec}")
         
-        # 导出数据
+        # Export data
         if export_json:
             analyzer.export_analysis_data(analysis, export_json)
         
@@ -331,11 +331,11 @@ def audio_command(
             analyzer.export_to_csv(analysis, export_csv)
         
         if verbose:
-            console.print("\n[green]✓ 音频分析完成[/green]")
-            console.print(f"数据点范围: {analysis.data_points[0].timestamp:.1f}s - {analysis.data_points[-1].timestamp:.1f}s")
+            console.print("\n[green]✓ Audio analysis complete[/green]")
+            console.print(f"Data range: {analysis.data_points[0].timestamp:.1f}s - {analysis.data_points[-1].timestamp:.1f}s")
             
     except Exception as e:
-        console.print(f"[red]✗ 分析失败: {e}[/red]")
+        console.print(f"[red]✗ Analysis failed: {e}[/red]")
         if verbose:
             import traceback
             console.print(traceback.format_exc())
@@ -343,32 +343,32 @@ def audio_command(
 
 
 def batch_audio_command(
-    files: List[str] = typer.Argument(..., help="要分析的视频文件列表"),
-    interval: float = typer.Option(15.0, "--interval", "-i", help="采样间隔(秒)"),
-    output_dir: str = typer.Option("./output", "--output", "-o", help="输出目录")
+    files: List[str] = typer.Argument(..., help="List of video files to analyze"),
+    interval: float = typer.Option(15.0, "--interval", "-i", help="Sampling interval (seconds)"),
+    output_dir: str = typer.Option("./output", "--output", "-o", help="Output directory")
 ):
     """
-    批量分析多个视频文件的音频码率
+    Analyze audio bitrate for multiple videos.
     """
-    console.print(f"[blue]开始批量分析 {len(files)} 个文件的音频[/blue]")
+    console.print(f"[blue]Starting batch audio analysis of {len(files)} file(s)[/blue]")
     
     import os
     from ..core.audio_analyzer import analyze_multiple_audio
     
-    # 确保输出目录存在
+    # Ensure output dir exists
     os.makedirs(output_dir, exist_ok=True)
     
     try:
         results = analyze_multiple_audio(files, interval)
         
-        # 创建汇总表格
-        summary_table = Table(title="音频批量分析结果汇总")
-        summary_table.add_column("文件名", style="cyan")
-        summary_table.add_column("编码", style="blue")
-        summary_table.add_column("声道", style="green")
-        summary_table.add_column("采样率", style="yellow")
-        summary_table.add_column("平均码率(kbps)", style="magenta")
-        summary_table.add_column("音质", style="red")
+        # Create summary table
+        summary_table = Table(title="Batch Audio Analysis Summary")
+        summary_table.add_column("Filename", style="cyan")
+        summary_table.add_column("Codec", style="blue")
+        summary_table.add_column("Channels", style="green")
+        summary_table.add_column("Sample Rate", style="yellow")
+        summary_table.add_column("Avg Bitrate (kbps)", style="magenta")
+        summary_table.add_column("Quality", style="red")
         
         analyzer = AudioBitrateAnalyzer()
         for result in results:
@@ -384,7 +384,7 @@ def batch_audio_command(
                 result.quality_level
             )
             
-            # 导出每个文件的分析结果
+            # Export each file's analysis results
             base_name = os.path.splitext(filename)[0]
             json_path = os.path.join(output_dir, f"{base_name}_audio.json")
             csv_path = os.path.join(output_dir, f"{base_name}_audio.csv")
@@ -393,92 +393,92 @@ def batch_audio_command(
             analyzer.export_to_csv(result, csv_path)
         
         console.print(summary_table)
-        console.print(f"\n[green]✓ 音频批量分析完成，结果已保存到 {output_dir}[/green]")
+        console.print(f"\n[green]✓ Batch audio analysis complete. Results saved to {output_dir}[/green]")
         
     except Exception as e:
-        console.print(f"[red]✗ 音频批量分析失败: {e}[/red]")
+        console.print(f"[red]✗ Batch audio analysis failed: {e}[/red]")
         raise typer.Exit(1)
 
 
 def fps_command(
-    file_path: str = typer.Argument(..., help="视频文件路径"),
-    interval: float = typer.Option(10.0, "--interval", "-i", help="采样间隔(秒)"),
-    export_json: Optional[str] = typer.Option(None, "--json", help="导出JSON文件路径"),
-    export_csv: Optional[str] = typer.Option(None, "--csv", help="导出CSV文件路径"),
-    verbose: bool = typer.Option(False, "--verbose", "-v", help="显示详细信息")
+    file_path: str = typer.Argument(..., help="Video file path"),
+    interval: float = typer.Option(10.0, "--interval", "-i", help="Sampling interval (seconds)"),
+    export_json: Optional[str] = typer.Option(None, "--json", help="Export JSON file path"),
+    export_csv: Optional[str] = typer.Option(None, "--csv", help="Export CSV file path"),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Show verbose output")
 ):
     """
-    分析视频FPS和掉帧情况
+    Analyze video FPS and dropped frames.
     """
-    console.print(f"[blue]正在分析FPS和掉帧情况:[/blue] {file_path}")
+    console.print(f"[blue]Analyzing FPS and dropped frames:[/blue] {file_path}")
     
     try:
-        # 处理视频文件
+        # Process video file
         processed_file = safe_process_file(file_path)
         if processed_file is None:
-            console.print("[red]文件处理失败[/red]")
+            console.print("[red]File processing failed[/red]")
             raise typer.Exit(1)
         
-        # 创建分析器并执行分析
+        # Create analyzer and run analysis
         analyzer = FPSAnalyzer(sample_interval=interval)
         analysis = analyzer.analyze(processed_file)
         
-        # 显示分析结果
-        table = Table(title="FPS分析结果")
-        table.add_column("统计项", style="cyan", no_wrap=True)
-        table.add_column("值", style="magenta")
+        # Show analysis results
+        table = Table(title="FPS Analysis")
+        table.add_column("Metric", style="cyan", no_wrap=True)
+        table.add_column("Value", style="magenta")
         
-        table.add_row("文件路径", analysis.file_path)
-        table.add_row("视频时长", f"{analysis.duration:.1f} 秒 ({analysis.duration/60:.1f} 分钟)")
-        table.add_row("采样间隔", f"{analysis.sample_interval:.1f} 秒")
-        table.add_row("采样点数", str(len(analysis.data_points)))
-        table.add_row("", "")  # 空行分隔
+        table.add_row("File Path", analysis.file_path)
+        table.add_row("Video Duration", f"{analysis.duration:.1f} s ({analysis.duration/60:.1f} min)")
+        table.add_row("Sampling Interval", f"{analysis.sample_interval:.1f} s")
+        table.add_row("Sample Points", str(len(analysis.data_points)))
+        table.add_row("", "")  # spacer
         
-        # FPS统计
-        table.add_row("[bold]FPS统计[/bold]", "")
-        table.add_row("声明帧率", f"{analysis.declared_fps:.2f} fps")
-        table.add_row("实际平均帧率", f"{analysis.actual_average_fps:.2f} fps")
-        table.add_row("最大瞬时帧率", f"{analysis.max_fps:.2f} fps")
-        table.add_row("最小瞬时帧率", f"{analysis.min_fps:.2f} fps")
-        table.add_row("帧率稳定性", f"{analysis.fps_stability:.1%}")
-        table.add_row("", "")  # 空行分隔
+        # FPS stats
+        table.add_row("[bold]FPS Statistics[/bold]", "")
+        table.add_row("Declared FPS", f"{analysis.declared_fps:.2f} fps")
+        table.add_row("Actual Avg FPS", f"{analysis.actual_average_fps:.2f} fps")
+        table.add_row("Max Instant FPS", f"{analysis.max_fps:.2f} fps")
+        table.add_row("Min Instant FPS", f"{analysis.min_fps:.2f} fps")
+        table.add_row("FPS Stability", f"{analysis.fps_stability:.1%}")
+        table.add_row("", "")  # spacer
         
-        # 掉帧统计
-        table.add_row("[bold]掉帧统计[/bold]", "")
-        table.add_row("总帧数", str(analysis.total_frames))
-        table.add_row("掉帧数", str(analysis.total_dropped_frames))
-        table.add_row("掉帧率", f"{analysis.drop_rate:.2%}")
-        table.add_row("性能等级", analysis.performance_grade)
+        # Drop statistics
+        table.add_row("[bold]Dropped Frames[/bold]", "")
+        table.add_row("Total Frames", str(analysis.total_frames))
+        table.add_row("Dropped Frames", str(analysis.total_dropped_frames))
+        table.add_row("Drop Rate", f"{analysis.drop_rate:.2%}")
+        table.add_row("Performance Grade", analysis.performance_grade)
         
         console.print(table)
         
-        # 显示质量评估
+        # Show quality assessment
         if verbose:
             quality = analyzer.analyze_fps_quality(analysis)
-            console.print("\n[bold]FPS质量评估:[/bold]")
-            console.print(f"性能等级: {quality['performance_grade']}")
-            console.print(f"FPS一致性: {quality['fps_consistency']}")
-            console.print(f"FPS准确性: {quality['fps_accuracy']}")
-            console.print(f"掉帧率: {quality['drop_rate']}")
+            console.print("\n[bold]FPS Quality Assessment:[/bold]")
+            console.print(f"Performance grade: {quality['performance_grade']}")
+            console.print(f"FPS consistency: {quality['fps_consistency']}")
+            console.print(f"FPS accuracy: {quality['fps_accuracy']}")
+            console.print(f"Drop rate: {quality['drop_rate']}")
             
             if quality['issues']:
-                console.print("\n[yellow]发现的问题:[/yellow]")
+                console.print("\n[yellow]Detected issues:[/yellow]")
                 for issue in quality['issues']:
                     console.print(f"• {issue}")
             
             if quality['recommendations']:
-                console.print("\n[green]改进建议:[/green]")
+                console.print("\n[green]Recommendations:[/green]")
                 for rec in quality['recommendations']:
                     console.print(f"• {rec}")
             
-            # 掉帧严重程度分析
+            # Drop severity analysis
             drop_analysis = analyzer.analyze_drop_severity(analysis)
             if drop_analysis['worst_segments']:
-                console.print(f"\n[red]最严重掉帧时间段 (严重程度: {drop_analysis['severity']}):[/red]")
+                console.print(f"\n[red]Worst dropped-frame segments (Severity: {drop_analysis['severity']}):[/red]")
                 for timestamp, drops in drop_analysis['worst_segments'][:3]:
-                    console.print(f"• {timestamp:.1f}s: {drops}帧")
+                    console.print(f"• {timestamp:.1f}s: {drops} frames")
         
-        # 导出数据
+        # Export data
         if export_json:
             analyzer.export_analysis_data(analysis, export_json)
         
@@ -486,11 +486,11 @@ def fps_command(
             analyzer.export_to_csv(analysis, export_csv)
         
         if verbose:
-            console.print("\n[green]✓ FPS分析完成[/green]")
-            console.print(f"数据点范围: {analysis.data_points[0].timestamp:.1f}s - {analysis.data_points[-1].timestamp:.1f}s")
+            console.print("\n[green]✓ FPS analysis complete[/green]")
+            console.print(f"Data range: {analysis.data_points[0].timestamp:.1f}s - {analysis.data_points[-1].timestamp:.1f}s")
             
     except Exception as e:
-        console.print(f"[red]✗ FPS分析失败: {e}[/red]")
+        console.print(f"[red]✗ FPS analysis failed: {e}[/red]")
         if verbose:
             import traceback
             console.print(traceback.format_exc())
@@ -498,32 +498,32 @@ def fps_command(
 
 
 def batch_fps_command(
-    files: List[str] = typer.Argument(..., help="要分析的视频文件列表"),
-    interval: float = typer.Option(10.0, "--interval", "-i", help="采样间隔(秒)"),
-    output_dir: str = typer.Option("./output", "--output", "-o", help="输出目录")
+    files: List[str] = typer.Argument(..., help="List of video files to analyze"),
+    interval: float = typer.Option(10.0, "--interval", "-i", help="Sampling interval (seconds)"),
+    output_dir: str = typer.Option("./output", "--output", "-o", help="Output directory")
 ):
     """
-    批量分析多个视频文件的FPS和掉帧情况
+    Analyze FPS and dropped frames for multiple videos.
     """
-    console.print(f"[blue]开始批量FPS分析 {len(files)} 个视频文件[/blue]")
+    console.print(f"[blue]Starting batch FPS analysis of {len(files)} video(s)[/blue]")
     
     import os
     from ..core.fps_analyzer import analyze_multiple_fps
     
-    # 确保输出目录存在
+    # Ensure output dir exists
     os.makedirs(output_dir, exist_ok=True)
     
     try:
         results = analyze_multiple_fps(files, interval)
         
-        # 创建汇总表格
-        summary_table = Table(title="FPS批量分析结果汇总")
-        summary_table.add_column("文件名", style="cyan")
-        summary_table.add_column("时长(分钟)", style="blue")
-        summary_table.add_column("声明FPS", style="green")
-        summary_table.add_column("实际FPS", style="yellow")
-        summary_table.add_column("掉帧率", style="red")
-        summary_table.add_column("等级", style="magenta")
+        # Create summary table
+        summary_table = Table(title="Batch FPS Analysis Summary")
+        summary_table.add_column("Filename", style="cyan")
+        summary_table.add_column("Duration (min)", style="blue")
+        summary_table.add_column("Declared FPS", style="green")
+        summary_table.add_column("Actual FPS", style="yellow")
+        summary_table.add_column("Drop Rate", style="red")
+        summary_table.add_column("Grade", style="magenta")
         
         analyzer = FPSAnalyzer()
         for result in results:
@@ -539,7 +539,7 @@ def batch_fps_command(
                 result.performance_grade
             )
             
-            # 导出每个文件的分析结果
+            # Export each file's analysis results
             base_name = os.path.splitext(filename)[0]
             json_path = os.path.join(output_dir, f"{base_name}_fps.json")
             csv_path = os.path.join(output_dir, f"{base_name}_fps.csv")
@@ -548,64 +548,64 @@ def batch_fps_command(
             analyzer.export_to_csv(result, csv_path)
         
         console.print(summary_table)
-        console.print(f"\n[green]✓ FPS批量分析完成，结果已保存到 {output_dir}[/green]")
+        console.print(f"\n[green]✓ Batch FPS analysis complete. Results saved to {output_dir}[/green]")
         
     except Exception as e:
-        console.print(f"[red]✗ FPS批量分析失败: {e}[/red]")
+        console.print(f"[red]✗ Batch FPS analysis failed: {e}[/red]")
         raise typer.Exit(1)
 
 
 def chart_command(
-    file_path: str = typer.Argument(..., help="视频文件路径"),
-    output_dir: str = typer.Option("./charts", "--output", "-o", help="图表输出目录"),
-    chart_type: str = typer.Option("combined", "--type", "-t", help="图表类型: video, audio, fps, combined, summary, all"),
-    config_type: str = typer.Option("default", "--config", "-c", help="图表配置: default, high_res, compact"),
-    video_interval: float = typer.Option(30.0, "--video-interval", help="视频码率采样间隔(秒)"),
-    audio_interval: float = typer.Option(15.0, "--audio-interval", help="音频码率采样间隔(秒)"),
-    fps_interval: float = typer.Option(10.0, "--fps-interval", help="FPS采样间隔(秒)")
+    file_path: str = typer.Argument(..., help="Video file path"),
+    output_dir: str = typer.Option("./charts", "--output", "-o", help="Charts output directory"),
+    chart_type: str = typer.Option("combined", "--type", "-t", help="Chart type: video, audio, fps, combined, summary, all"),
+    config_type: str = typer.Option("default", "--config", "-c", help="Chart config: default, high_res, compact"),
+    video_interval: float = typer.Option(30.0, "--video-interval", help="Video sampling interval (seconds)"),
+    audio_interval: float = typer.Option(15.0, "--audio-interval", help="Audio sampling interval (seconds)"),
+    fps_interval: float = typer.Option(10.0, "--fps-interval", help="FPS sampling interval (seconds)")
 ):
     """
-    生成视频分析图表
+    Generate video analysis charts.
     """
-    console.print(f"[blue]正在为视频生成图表:[/blue] {file_path}")
-    console.print(f"图表类型: {chart_type}, 配置: {config_type}")
+    console.print(f"[blue]Generating charts for:[/blue] {file_path}")
+    console.print(f"Type: {chart_type}, Config: {config_type}")
     
     try:
-        # 处理视频文件
+        # Process video file
         processed_file = safe_process_file(file_path)
         if processed_file is None:
-            console.print("[red]文件处理失败[/red]")
+            console.print("[red]File processing failed[/red]")
             raise typer.Exit(1)
         
-        # 根据图表类型决定需要进行哪些分析
+        # Decide which analyses are needed by chart type
         need_video = chart_type in ['video', 'combined', 'summary', 'all']
         need_audio = chart_type in ['audio', 'combined', 'summary', 'all'] 
         need_fps = chart_type in ['fps', 'combined', 'summary', 'all']
         
-        # 执行必要的分析
+        # Perform required analyses
         video_analysis = None
         audio_analysis = None
         fps_analysis = None
         
         if need_video:
-            console.print("[yellow]正在分析视频码率...[/yellow]")
+            console.print("[yellow]Analyzing video bitrate...[/yellow]")
             video_analyzer = VideoBitrateAnalyzer(sample_interval=video_interval)
             video_analysis = video_analyzer.analyze(processed_file)
         
         if need_audio:
-            console.print("[yellow]正在分析音频码率...[/yellow]")
+            console.print("[yellow]Analyzing audio bitrate...[/yellow]")
             audio_analyzer = AudioBitrateAnalyzer(sample_interval=audio_interval)
             audio_analysis = audio_analyzer.analyze(processed_file)
         
         if need_fps:
-            console.print("[yellow]正在分析FPS...[/yellow]")
+            console.print("[yellow]Analyzing FPS...[/yellow]")
             fps_analyzer = FPSAnalyzer(sample_interval=fps_interval)
             fps_analysis = fps_analyzer.analyze(processed_file)
         
-        # 创建图表生成器
+        # Create chart generator
         chart_generator = ChartGenerator()
         
-        # 获取配置
+        # Get chart config
         if config_type == "high_res":
             config = ChartStyles.get_high_res_config()
         elif config_type == "compact":
@@ -615,7 +615,7 @@ def chart_command(
         
         config.output_dir = output_dir
         
-        # 生成图表
+        # Generate charts
         results = {}
         
         if chart_type == "video" and video_analysis:
@@ -659,46 +659,46 @@ def chart_command(
             console.print(f"✓ Full report generated with {len(results)} charts")
         
         else:
-            console.print(f"[red]无法生成图表: 缺少必要的分析数据或不支持的图表类型[/red]")
+            console.print(f"[red]Unable to generate chart: missing analysis data or unsupported chart type[/red]")
             raise typer.Exit(1)
         
-        # 显示结果汇总
+        # Show results summary
         if results:
-            table = Table(title="生成的图表文件")
-            table.add_column("图表类型", style="cyan")
-            table.add_column("文件路径", style="green")
+            table = Table(title="Generated Chart Files")
+            table.add_column("Chart Type", style="cyan")
+            table.add_column("File Path", style="green")
             
             for chart_name, chart_path in results.items():
                 table.add_row(chart_name, chart_path)
             
             console.print(table)
-            console.print(f"\n[green]✓ 图表生成完成，保存到: {output_dir}[/green]")
+            console.print(f"\n[green]✓ Chart generation complete. Saved to: {output_dir}[/green]")
         
     except Exception as e:
-        console.print(f"[red]✗ 图表生成失败: {e}[/red]")
+        console.print(f"[red]✗ Chart generation failed: {e}[/red]")
         import traceback
         console.print(f"[dim]{traceback.format_exc()}[/dim]")
         raise typer.Exit(1)
 
 
 def batch_chart_command(
-    files: List[str] = typer.Argument(..., help="要分析的视频文件列表"),
-    output_dir: str = typer.Option("./batch_charts", "--output", "-o", help="图表输出目录"),
-    chart_type: str = typer.Option("combined", "--type", "-t", help="图表类型: combined, summary, all"),
-    config_type: str = typer.Option("default", "--config", "-c", help="图表配置: default, high_res, compact")
+    files: List[str] = typer.Argument(..., help="List of video files to analyze"),
+    output_dir: str = typer.Option("./batch_charts", "--output", "-o", help="Charts output directory"),
+    chart_type: str = typer.Option("combined", "--type", "-t", help="Chart type: combined, summary, all"),
+    config_type: str = typer.Option("default", "--config", "-c", help="Chart config: default, high_res, compact")
 ):
     """
-    批量生成多个视频文件的分析图表
+    Generate charts for multiple video files.
     """
-    console.print(f"[blue]开始批量生成 {len(files)} 个文件的图表[/blue]")
-    console.print(f"图表类型: {chart_type}, 配置: {config_type}")
+    console.print(f"[blue]Starting batch chart generation for {len(files)} file(s)[/blue]")
+    console.print(f"Type: {chart_type}, Config: {config_type}")
     
     import os
     
-    # 确保输出目录存在
+    # Ensure output directory exists
     os.makedirs(output_dir, exist_ok=True)
     
-    # 获取配置
+        # Get config
     if config_type == "high_res":
         base_config = ChartStyles.get_high_res_config()
     elif config_type == "compact":
@@ -712,16 +712,16 @@ def batch_chart_command(
     
     try:
         for i, file_path in enumerate(files, 1):
-            console.print(f"\n[blue]处理文件 {i}/{len(files)}:[/blue] {os.path.basename(file_path)}")
+            console.print(f"\n[blue]Processing file {i}/{len(files)}:[/blue] {os.path.basename(file_path)}")
             
             try:
-                # 处理文件
+                # Process file
                 processed_file = safe_process_file(file_path)
                 if processed_file is None:
-                    console.print(f"[red]✗ 文件处理失败: {file_path}[/red]")
+                    console.print(f"[red]✗ File processing failed: {file_path}[/red]")
                     continue
                 
-                # 执行三种分析
+                # Run three analyses
                 video_analyzer = VideoBitrateAnalyzer()
                 audio_analyzer = AudioBitrateAnalyzer()
                 fps_analyzer = FPSAnalyzer()
@@ -730,7 +730,7 @@ def batch_chart_command(
                 audio_analysis = audio_analyzer.analyze(processed_file)
                 fps_analysis = fps_analyzer.analyze(processed_file)
                 
-                # 为每个文件创建子目录
+                # Create subdirectory for each file
                 file_basename = os.path.splitext(os.path.basename(file_path))[0]
                 file_output_dir = os.path.join(output_dir, file_basename)
                 os.makedirs(file_output_dir, exist_ok=True)
@@ -745,7 +745,7 @@ def batch_chart_command(
                     output_dir=file_output_dir
                 )
                 
-                # 生成图表
+                # Generate charts
                 if chart_type == "combined":
                     config.title = f"Combined Analysis - {file_basename}"
                     chart_path = chart_generator.generate_combined_chart(
@@ -772,15 +772,15 @@ def batch_chart_command(
                 success_count += 1
                 
             except Exception as e:
-                console.print(f"[red]✗ 处理文件失败 {file_path}: {e}[/red]")
+                console.print(f"[red]✗ Failed to process file {file_path}: {e}[/red]")
                 continue
         
-        # 显示最终结果
-        console.print(f"\n[green]✓ 批量图表生成完成[/green]")
-        console.print(f"成功处理: {success_count}/{len(files)} 个文件")
-        console.print(f"生成图表: {total_charts} 个")
-        console.print(f"输出目录: {output_dir}")
+        # Final results
+        console.print(f"\n[green]✓ Batch chart generation complete[/green]")
+        console.print(f"Processed: {success_count}/{len(files)} file(s)")
+        console.print(f"Charts generated: {total_charts}")
+        console.print(f"Output directory: {output_dir}")
         
     except Exception as e:
-        console.print(f"[red]✗ 批量图表生成失败: {e}[/red]")
+        console.print(f"[red]✗ Batch chart generation failed: {e}[/red]")
         raise typer.Exit(1)

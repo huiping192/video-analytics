@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
 """
-Video Analytics Main Entry Point
-视频分析工具主入口 - 向后兼容入口点
+Video Analytics Main Entry Point - legacy-compatible entry point
 """
 
 from .cli.main import main
 
-# 保持向后兼容
+# Backward compatibility
 if __name__ == "__main__":
     main()

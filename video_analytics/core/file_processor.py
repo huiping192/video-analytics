@@ -6,47 +6,47 @@ import ffmpeg
 
 @dataclass
 class VideoMetadata:
-    """视频元数据"""
+    """Video metadata"""
     file_path: str
-    duration: float          # 视频时长(秒)
-    file_size: int          # 文件大小(字节)
-    format_name: str        # 容器格式
-    bit_rate: int           # 总码率(bps)
+    duration: float          # duration (seconds)
+    file_size: int          # file size (bytes)
+    format_name: str        # container format
+    bit_rate: int           # overall bitrate (bps)
     
-    # 视频流信息
-    video_codec: str        # 视频编码
-    width: int             # 视频宽度
-    height: int            # 视频高度
-    fps: float             # 帧率
-    video_bitrate: int     # 视频码率(bps)
+    # Video stream info
+    video_codec: str        # video codec
+    width: int             # width
+    height: int            # height
+    fps: float             # frames per second
+    video_bitrate: int     # video bitrate (bps)
     
-    # 音频流信息
-    audio_codec: str       # 音频编码
-    channels: int          # 声道数
-    sample_rate: int       # 采样率
-    audio_bitrate: int     # 音频码率(bps)
+    # Audio stream info
+    audio_codec: str       # audio codec
+    channels: int          # channels
+    sample_rate: int       # sample rate
+    audio_bitrate: int     # audio bitrate (bps)
 
 
 class ProcessedFile:
-    """处理后的视频文件对象"""
+    """Processed video file object"""
     
     def __init__(self, file_path: str):
         self.file_path = file_path
         self.metadata = None
     
     def load_metadata(self) -> VideoMetadata:
-        """加载视频元数据"""
+        """Load video metadata"""
         if self.metadata is None:
             self.metadata = self._extract_metadata()
         return self.metadata
     
     def _extract_metadata(self) -> VideoMetadata:
-        """提取视频元数据"""
+        """Extract video metadata"""
         try:
             probe = ffmpeg.probe(self.file_path)
             format_info = probe['format']
             
-            # 查找视频流和音频流
+            # Find video and audio streams
             video_stream = None
             audio_stream = None
             
@@ -63,14 +63,14 @@ class ProcessedFile:
                 format_name=format_info['format_name'],
                 bit_rate=int(format_info.get('bit_rate', 0)),
                 
-                # 视频流信息
+                # Video stream info
                 video_codec=video_stream['codec_name'] if video_stream else '',
                 width=video_stream.get('width', 0) if video_stream else 0,
                 height=video_stream.get('height', 0) if video_stream else 0,
                 fps=self._parse_fps(video_stream) if video_stream else 0.0,
                 video_bitrate=int(video_stream.get('bit_rate', 0)) if video_stream else 0,
                 
-                # 音频流信息
+                # Audio stream info
                 audio_codec=audio_stream['codec_name'] if audio_stream else '',
                 channels=audio_stream.get('channels', 0) if audio_stream else 0,
                 sample_rate=audio_stream.get('sample_rate', 0) if audio_stream else 0,
@@ -78,10 +78,10 @@ class ProcessedFile:
             )
             
         except ffmpeg.Error as e:
-            raise ValueError(f"FFmpeg解析失败: {e}")
+            raise ValueError(f"FFmpeg probe failed: {e}")
     
     def _parse_fps(self, video_stream: dict) -> float:
-        """解析帧率"""
+        """Parse FPS value"""
         fps_str = video_stream.get('r_frame_rate', '0/1')
         try:
             num, den = fps_str.split('/')
@@ -91,81 +91,81 @@ class ProcessedFile:
 
 
 class FileProcessor:
-    """文件处理器"""
+    """File processor"""
     
     def process_input(self, file_path: str) -> ProcessedFile:
-        """处理输入文件"""
-        # 验证文件
+        """Process input file"""
+        # Validate file
         self._validate_file(file_path)
         
-        # 创建处理对象
+        # Create processed file
         processed_file = ProcessedFile(file_path)
         
-        # 加载元数据进行验证
+        # Load metadata to validate
         metadata = processed_file.load_metadata()
         
-        # 验证视频内容
+        # Validate video content
         self._validate_video_content(metadata)
         
         return processed_file
     
     def _validate_file(self, file_path: str):
-        """验证文件基本信息"""
+        """Validate basic file information"""
         if not os.path.exists(file_path):
-            raise FileNotFoundError(f"文件不存在: {file_path}")
+            raise FileNotFoundError(f"File not found: {file_path}")
         
         if not os.access(file_path, os.R_OK):
-            raise PermissionError(f"文件无读取权限: {file_path}")
+            raise PermissionError(f"File not readable: {file_path}")
         
         file_size = os.path.getsize(file_path)
-        if file_size < 1024:  # 小于1KB
-            raise ValueError("文件太小，可能不是有效的视频文件")
+        if file_size < 1024:  # < 1KB
+            raise ValueError("File too small; may not be a valid video")
     
     def _validate_video_content(self, metadata: VideoMetadata):
-        """验证视频内容"""
+        """Validate video content"""
         if metadata.duration <= 0:
-            raise ValueError("无法获取视频时长")
+            raise ValueError("Unable to get video duration")
         
         if metadata.width <= 0 or metadata.height <= 0:
-            raise ValueError("无法获取视频分辨率")
+            raise ValueError("Unable to get video resolution")
         
         if not metadata.video_codec:
-            raise ValueError("文件不包含视频流")
+            raise ValueError("No video stream found")
 
 
 class FileProcessingError(Exception):
-    """文件处理基础异常"""
+    """Base file processing error"""
     pass
 
 
 class InvalidFormatError(FileProcessingError):
-    """不支持的文件格式"""
+    """Unsupported file format"""
     pass
 
 
 class CorruptedFileError(FileProcessingError):
-    """文件损坏"""
+    """Corrupted file"""
     pass
 
 
 def safe_process_file(file_path: str) -> Optional[ProcessedFile]:
-    """安全的文件处理"""
+    """Safely process a file"""
     try:
         processor = FileProcessor()
         return processor.process_input(file_path)
         
     except FileNotFoundError:
-        print(f"错误: 文件不存在 - {file_path}")
+        print(f"Error: File not found - {file_path}")
         return None
         
     except PermissionError:
-        print(f"错误: 没有文件访问权限 - {file_path}")
+        print(f"Error: No permission to read file - {file_path}")
         return None
         
     except ValueError as e:
-        print(f"错误: 文件格式问题 - {e}")
+        print(f"Error: File format issue - {e}")
         return None
         
     except Exception as e:
-        print(f"未知错误: {e}")
+        print(f"Unknown error: {e}")
         return None
