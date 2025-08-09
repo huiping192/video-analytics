@@ -1,6 +1,8 @@
 import os
 import subprocess
+import requests
 from typing import Sequence, Optional
+from urllib.parse import urlparse
 
 
 class ValidationError(Exception):
@@ -69,3 +71,74 @@ def normalize_interval(interval: float, duration: float) -> float:
     if duration > 3600 and interval < 20.0:  # >1h
         return 20.0
     return interval
+
+
+def is_url(input_string: str) -> bool:
+    """Check if input string is a URL"""
+    if not input_string or not isinstance(input_string, str):
+        return False
+    
+    try:
+        parsed = urlparse(input_string)
+        return parsed.scheme in ['http', 'https'] and parsed.netloc
+    except:
+        return False
+
+
+def is_hls_url(url: str) -> bool:
+    """Check if URL appears to be HLS stream"""
+    if not is_url(url):
+        return False
+    
+    url_lower = url.lower()
+    return (url_lower.endswith('.m3u8') or 
+            url_lower.endswith('.m3u') or
+            'm3u8' in url_lower)
+
+
+def validate_url(url: str, timeout: int = 10) -> None:
+    """Validate URL accessibility and content type"""
+    if not is_url(url):
+        raise ValidationError(f"Invalid URL format: {url}")
+    
+    try:
+        # Use HEAD request for efficiency
+        response = requests.head(url, timeout=timeout, allow_redirects=True)
+        response.raise_for_status()
+        
+        # For HLS URLs, we expect text/plain or application/x-mpegURL
+        if is_hls_url(url):
+            content_type = response.headers.get('content-type', '').lower()
+            if content_type and not any(ct in content_type for ct in ['text', 'mpegurl', 'm3u']):
+                # Some servers don't set proper content-type, so just warn
+                pass
+        else:
+            # For direct video URLs, check content-type
+            content_type = response.headers.get('content-type', '').lower()
+            if content_type and not content_type.startswith(('video/', 'application/octet-stream')):
+                raise ValidationError(f"URL does not appear to be a video file: {content_type}")
+    
+    except requests.RequestException as e:
+        raise ValidationError(f"URL not accessible: {e}")
+
+
+def validate_input(input_path: str) -> str:
+    """
+    Validate input - can be local file path, HTTP URL, or HLS URL
+    Returns the input type: 'file', 'url', or 'hls'
+    """
+    if not input_path or not isinstance(input_path, str):
+        raise ValidationError("Invalid input")
+    
+    # Check if it's a URL
+    if is_url(input_path):
+        validate_url(input_path)
+        
+        if is_hls_url(input_path):
+            return 'hls'
+        else:
+            return 'url'
+    else:
+        # Assume it's a local file path
+        validate_file_path(input_path)
+        return 'file'

@@ -22,24 +22,36 @@ console = Console()
 
 
 def info_command(
-    file_path: str = typer.Argument(..., help="Video file path"),
+    input_path: str = typer.Argument(..., help="Video file path, HTTP URL, or HLS stream URL"),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Show verbose output"),
-    simple: bool = typer.Option(False, "--simple", "-s", help="Use simple mode (no FFmpeg)")
+    simple: bool = typer.Option(False, "--simple", "-s", help="Use simple mode (no FFmpeg)"),
+    force_download: bool = typer.Option(False, "--force-download", help="Force re-download even if cached"),
+    max_workers: int = typer.Option(10, "--workers", help="Maximum download threads for HLS")
 ):
     """
-    Show basic information about the video file.
+    Show basic information about the video file, URL, or HLS stream.
     """
-    console.print(f"[blue]Analyzing file:[/blue] {file_path}")
+    console.print(f"[blue]Analyzing input:[/blue] {input_path}")
     
     if simple:
-        # Use simple mode
+        # Use simple mode for local files only
         from ..core.simple_processor import SimpleProcessedFile
-        processed_file = SimpleProcessedFile(file_path)
+        from ..utils.validators import is_url
+        
+        if is_url(input_path):
+            console.print("[red]Simple mode not supported for URLs/HLS streams[/red]")
+            raise typer.Exit(1)
+            
+        processed_file = SimpleProcessedFile(input_path)
     else:
-        # Use full FFmpeg processing mode
-        processed_file = safe_process_file(file_path)
+        # Use full processing mode with download support
+        processed_file = safe_process_file(
+            input_path, 
+            force_download=force_download,
+            max_workers=max_workers
+        )
         if processed_file is None:
-            console.print("[red]File processing failed[/red]")
+            console.print("[red]Input processing failed[/red]")
             raise typer.Exit(1)
     
     metadata = processed_file.load_metadata()
@@ -51,6 +63,9 @@ def info_command(
     
     # Basic information
     table.add_row("File Path", metadata.file_path)
+    if metadata.original_url:
+        table.add_row("Original URL", metadata.original_url[:60] + "..." if len(metadata.original_url) > 60 else metadata.original_url)
+        table.add_row("Cached", "Yes" if metadata.is_cached else "No")
     table.add_row("File Size", f"{metadata.file_size / 1024 / 1024:.1f} MB")
     table.add_row("Duration", f"{metadata.duration:.1f} s ({metadata.duration/60:.1f} min)")
     table.add_row("Container Format", metadata.format_name)
@@ -142,11 +157,13 @@ def check_command():
 
 
 def bitrate_command(
-    file_path: str = typer.Argument(..., help="Video file path"),
+    input_path: str = typer.Argument(..., help="Video file path, HTTP URL, or HLS stream URL"),
     interval: Optional[float] = typer.Option(None, "--interval", "-i", help="Sampling interval (seconds)"),
     export_json: Optional[str] = typer.Option(None, "--json", help="Export JSON file path"),
     export_csv: Optional[str] = typer.Option(None, "--csv", help="Export CSV file path"),
-    verbose: Optional[bool] = typer.Option(None, "--verbose", "-v", help="Show verbose output")
+    verbose: Optional[bool] = typer.Option(None, "--verbose", "-v", help="Show verbose output"),
+    force_download: bool = typer.Option(False, "--force-download", help="Force re-download even if cached"),
+    max_workers: int = typer.Option(10, "--workers", help="Maximum download threads for HLS")
 ):
     """
     Analyze video bitrate over time.
@@ -161,15 +178,27 @@ def bitrate_command(
     }
     config = get_merged_config(cli_args)
     
-    console.print(f"[blue]Analyzing video bitrate:[/blue] {file_path}")
+    console.print(f"[blue]Analyzing video bitrate:[/blue] {input_path}")
+    
+    # Auto-optimize interval for large files based on URL type
+    from ..utils.validators import is_hls_url
+    if config.interval is None and is_hls_url(input_path):
+        # Default to larger intervals for HLS streams (likely long videos)
+        config.interval = 60.0  # 1 minute for HLS
+        console.print("[dim]Auto-optimized sampling interval for HLS: 60s[/dim]")
+    
     if config.verbose:
         console.print(f"[dim]Using interval: {config.interval}s[/dim]")
     
     try:
-        # Process video file
-        processed_file = safe_process_file(file_path)
+        # Process video file with download support
+        processed_file = safe_process_file(
+            input_path, 
+            force_download=force_download,
+            max_workers=max_workers
+        )
         if processed_file is None:
-            console.print("[red]File processing failed[/red]")
+            console.print("[red]Input processing failed[/red]")
             raise typer.Exit(1)
         
         # Create analyzer and run analysis
@@ -199,12 +228,12 @@ def bitrate_command(
         
         # Export data
         if export_json or config.export_json:
-            json_path = export_json or f"{os.path.splitext(file_path)[0]}_bitrate.json"
+            json_path = export_json or f"{os.path.splitext(os.path.basename(input_path))[0]}_bitrate.json"
             analyzer.export_analysis_data(analysis, json_path)
             console.print(f"[green]✓ JSON exported: {json_path}[/green]")
         
         if export_csv or config.export_csv:
-            csv_path = export_csv or f"{os.path.splitext(file_path)[0]}_bitrate.csv"
+            csv_path = export_csv or f"{os.path.splitext(os.path.basename(input_path))[0]}_bitrate.csv"
             analyzer.export_to_csv(analysis, csv_path)
             console.print(f"[green]✓ CSV exported: {csv_path}[/green]")
         
@@ -277,22 +306,34 @@ def batch_bitrate_command(
 
 
 def audio_command(
-    file_path: str = typer.Argument(..., help="Video file path"),
+    input_path: str = typer.Argument(..., help="Video file path, HTTP URL, or HLS stream URL"),
     interval: float = typer.Option(15.0, "--interval", "-i", help="Sampling interval (seconds)"),
     export_json: Optional[str] = typer.Option(None, "--json", help="Export JSON file path"),
     export_csv: Optional[str] = typer.Option(None, "--csv", help="Export CSV file path"),
-    verbose: bool = typer.Option(False, "--verbose", "-v", help="Show verbose output")
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Show verbose output"),
+    force_download: bool = typer.Option(False, "--force-download", help="Force re-download even if cached"),
+    max_workers: int = typer.Option(10, "--workers", help="Maximum download threads for HLS")
 ):
     """
     Analyze audio bitrate over time.
     """
-    console.print(f"[blue]Analyzing audio bitrate:[/blue] {file_path}")
+    console.print(f"[blue]Analyzing audio bitrate:[/blue] {input_path}")
+    
+    # Auto-optimize interval for large files
+    from ..utils.validators import is_hls_url
+    if is_hls_url(input_path) and interval == 15.0:  # Default value
+        interval = 30.0  # Larger interval for HLS
+        console.print("[dim]Auto-optimized sampling interval for HLS: 30s[/dim]")
     
     try:
-        # Process video file
-        processed_file = safe_process_file(file_path)
+        # Process video file with download support
+        processed_file = safe_process_file(
+            input_path,
+            force_download=force_download,
+            max_workers=max_workers
+        )
         if processed_file is None:
-            console.print("[red]File processing failed[/red]")
+            console.print("[red]Input processing failed[/red]")
             raise typer.Exit(1)
         
         # Create analyzer and run analysis
@@ -418,22 +459,34 @@ def batch_audio_command(
 
 
 def fps_command(
-    file_path: str = typer.Argument(..., help="Video file path"),
+    input_path: str = typer.Argument(..., help="Video file path, HTTP URL, or HLS stream URL"),
     interval: float = typer.Option(10.0, "--interval", "-i", help="Sampling interval (seconds)"),
     export_json: Optional[str] = typer.Option(None, "--json", help="Export JSON file path"),
     export_csv: Optional[str] = typer.Option(None, "--csv", help="Export CSV file path"),
-    verbose: bool = typer.Option(False, "--verbose", "-v", help="Show verbose output")
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Show verbose output"),
+    force_download: bool = typer.Option(False, "--force-download", help="Force re-download even if cached"),
+    max_workers: int = typer.Option(10, "--workers", help="Maximum download threads for HLS")
 ):
     """
     Analyze video FPS and dropped frames.
     """
-    console.print(f"[blue]Analyzing FPS and dropped frames:[/blue] {file_path}")
+    console.print(f"[blue]Analyzing FPS and dropped frames:[/blue] {input_path}")
+    
+    # Auto-optimize interval for large files
+    from ..utils.validators import is_hls_url
+    if is_hls_url(input_path) and interval == 10.0:  # Default value
+        interval = 30.0  # Larger interval for HLS  
+        console.print("[dim]Auto-optimized sampling interval for HLS: 30s[/dim]")
     
     try:
-        # Process video file
-        processed_file = safe_process_file(file_path)
+        # Process video file with download support
+        processed_file = safe_process_file(
+            input_path,
+            force_download=force_download, 
+            max_workers=max_workers
+        )
         if processed_file is None:
-            console.print("[red]File processing failed[/red]")
+            console.print("[red]Input processing failed[/red]")
             raise typer.Exit(1)
         
         # Create analyzer and run analysis
@@ -573,25 +626,43 @@ def batch_fps_command(
 
 
 def chart_command(
-    file_path: str = typer.Argument(..., help="Video file path"),
+    input_path: str = typer.Argument(..., help="Video file path, HTTP URL, or HLS stream URL"),
     output_dir: str = typer.Option("./charts", "--output", "-o", help="Charts output directory"),
     chart_type: str = typer.Option("combined", "--type", "-t", help="Chart type: video, audio, fps, combined, summary, all"),
     config_type: str = typer.Option("default", "--config", "-c", help="Chart config: default, high_res, compact"),
     video_interval: float = typer.Option(30.0, "--video-interval", help="Video sampling interval (seconds)"),
     audio_interval: float = typer.Option(15.0, "--audio-interval", help="Audio sampling interval (seconds)"),
-    fps_interval: float = typer.Option(10.0, "--fps-interval", help="FPS sampling interval (seconds)")
+    fps_interval: float = typer.Option(10.0, "--fps-interval", help="FPS sampling interval (seconds)"),
+    force_download: bool = typer.Option(False, "--force-download", help="Force re-download even if cached"),
+    max_workers: int = typer.Option(10, "--workers", help="Maximum download threads for HLS")
 ):
     """
     Generate video analysis charts.
     """
-    console.print(f"[blue]Generating charts for:[/blue] {file_path}")
+    console.print(f"[blue]Generating charts for:[/blue] {input_path}")
     console.print(f"Type: {chart_type}, Config: {config_type}")
     
+    # Auto-optimize intervals for HLS
+    from ..utils.validators import is_hls_url
+    if is_hls_url(input_path):
+        # Use larger intervals for HLS streams
+        if video_interval == 30.0:  # Default value
+            video_interval = 120.0  # 2 minutes
+        if audio_interval == 15.0:  # Default value
+            audio_interval = 60.0   # 1 minute
+        if fps_interval == 10.0:  # Default value
+            fps_interval = 60.0     # 1 minute
+        console.print("[dim]Auto-optimized sampling intervals for HLS[/dim]")
+    
     try:
-        # Process video file
-        processed_file = safe_process_file(file_path)
+        # Process video file with download support
+        processed_file = safe_process_file(
+            input_path,
+            force_download=force_download,
+            max_workers=max_workers
+        )
         if processed_file is None:
-            console.print("[red]File processing failed[/red]")
+            console.print("[red]Input processing failed[/red]")
             raise typer.Exit(1)
         
         # Decide which analyses are needed by chart type
@@ -636,25 +707,25 @@ def chart_command(
         results = {}
         
         if chart_type == "video" and video_analysis:
-            config.title = f"Video Bitrate Analysis - {os.path.basename(file_path)}"
+            config.title = f"Video Bitrate Analysis - {os.path.basename(input_path)}"
             chart_path = chart_generator.generate_video_bitrate_chart(video_analysis, config)
             results['video'] = chart_path
             console.print(f"✓ Video bitrate chart generated: {chart_path}")
             
         elif chart_type == "audio" and audio_analysis:
-            config.title = f"Audio Bitrate Analysis - {os.path.basename(file_path)}"
+            config.title = f"Audio Bitrate Analysis - {os.path.basename(input_path)}"
             chart_path = chart_generator.generate_audio_bitrate_chart(audio_analysis, config)
             results['audio'] = chart_path
             console.print(f"✓ Audio bitrate chart generated: {chart_path}")
             
         elif chart_type == "fps" and fps_analysis:
-            config.title = f"FPS Analysis - {os.path.basename(file_path)}"
+            config.title = f"FPS Analysis - {os.path.basename(input_path)}"
             chart_path = chart_generator.generate_fps_chart(fps_analysis, config)
             results['fps'] = chart_path
             console.print(f"✓ FPS chart generated: {chart_path}")
             
         elif chart_type == "combined" and all([video_analysis, audio_analysis, fps_analysis]):
-            config.title = f"Combined Analysis - {os.path.basename(file_path)}"
+            config.title = f"Combined Analysis - {os.path.basename(input_path)}"
             chart_path = chart_generator.generate_combined_chart(
                 video_analysis, audio_analysis, fps_analysis, config
             )
@@ -662,7 +733,7 @@ def chart_command(
             console.print(f"✓ Combined analysis chart generated: {chart_path}")
             
         elif chart_type == "summary" and all([video_analysis, audio_analysis, fps_analysis]):
-            config.title = f"Analysis Summary - {os.path.basename(file_path)}"
+            config.title = f"Analysis Summary - {os.path.basename(input_path)}"
             chart_path = chart_generator.generate_summary_chart(
                 video_analysis, audio_analysis, fps_analysis, config
             )
@@ -887,3 +958,238 @@ def _convert_config_value(key: str, value: str):
     
     # String fields (default)
     return value
+
+
+# ================================================================================
+# Download and Cache Management Commands
+# ================================================================================
+
+def download_command(
+    url: str = typer.Argument(..., help="HTTP URL or HLS stream URL to download"),
+    output: Optional[str] = typer.Option(None, "--output", "-o", help="Output file path"),
+    max_workers: int = typer.Option(10, "--workers", help="Maximum download threads for HLS"),
+    force: bool = typer.Option(False, "--force", help="Force re-download even if cached")
+):
+    """
+    Download video from HTTP URL or HLS stream.
+    """
+    from ..utils.validators import is_url, is_hls_url
+    from ..core.hls_downloader import HLSDownloader
+    from ..utils.download_cache import get_download_cache
+    import requests
+    from rich.progress import Progress, BarColumn, TextColumn, DownloadColumn
+    
+    if not is_url(url):
+        console.print(f"[red]Invalid URL: {url}[/red]")
+        raise typer.Exit(1)
+    
+    console.print(f"[blue]Downloading:[/blue] {url}")
+    
+    try:
+        # Check cache first
+        cache = get_download_cache()
+        if not force:
+            cached_path = cache.get_cached_file(url)
+            if cached_path:
+                console.print(f"[green]✓ Using cached file: {cached_path}[/green]")
+                
+                if output:
+                    import shutil
+                    shutil.copy2(cached_path, output)
+                    console.print(f"[green]✓ Copied to: {output}[/green]")
+                
+                return
+        
+        # Download based on URL type
+        if is_hls_url(url):
+            # HLS download
+            downloader = HLSDownloader(max_workers=max_workers)
+            result = downloader.download_hls_stream(url, output)
+            
+            if result.success:
+                # Add to cache
+                cache.add_to_cache(
+                    url=url,
+                    file_path=result.local_file_path,
+                    duration=result.duration,
+                    format_name='mp4'
+                )
+                
+                console.print(f"[green]✓ HLS download complete: {result.local_file_path}[/green]")
+                console.print(f"  Size: {result.total_size/1024/1024:.1f} MB")
+                console.print(f"  Duration: {result.duration/60:.1f} min")
+                console.print(f"  Segments: {result.segments_count}")
+            else:
+                console.print(f"[red]✗ HLS download failed: {result.error_message}[/red]")
+                raise typer.Exit(1)
+        
+        else:
+            # HTTP download
+            from urllib.parse import urlparse
+            import os
+            import tempfile
+            
+            if not output:
+                parsed_url = urlparse(url)
+                filename = os.path.basename(parsed_url.path) or 'video.mp4'
+                output = os.path.join(tempfile.gettempdir(), filename)
+            
+            with requests.get(url, stream=True, timeout=30) as response:
+                response.raise_for_status()
+                
+                total_size = int(response.headers.get('content-length', 0))
+                
+                with Progress(
+                    TextColumn("[progress.description]{task.description}"),
+                    BarColumn(),
+                    DownloadColumn(),
+                    console=console
+                ) as progress:
+                    
+                    download_task = progress.add_task("Downloading", total=total_size)
+                    
+                    with open(output, 'wb') as f:
+                        for chunk in response.iter_content(chunk_size=8192):
+                            if chunk:
+                                f.write(chunk)
+                                progress.update(download_task, advance=len(chunk))
+            
+            # Add to cache
+            cache.add_to_cache(url=url, file_path=output)
+            
+            console.print(f"[green]✓ Download complete: {output}[/green]")
+            console.print(f"  Size: {os.path.getsize(output)/1024/1024:.1f} MB")
+            
+    except Exception as e:
+        console.print(f"[red]✗ Download failed: {e}[/red]")
+        raise typer.Exit(1)
+
+
+def cache_list_command():
+    """List all cached files."""
+    from ..utils.download_cache import get_download_cache
+    
+    cache = get_download_cache()
+    cached_files = cache.list_cached_files()
+    
+    if not cached_files:
+        console.print("[yellow]No cached files found[/yellow]")
+        return
+    
+    # Create cache listing table
+    table = Table(title="Cached Files")
+    table.add_column("Cache Key", style="cyan", no_wrap=True)
+    table.add_column("URL", style="blue")
+    table.add_column("Size (MB)", style="green", justify="right")
+    table.add_column("Duration", style="yellow", justify="right")
+    table.add_column("Format", style="magenta")
+    table.add_column("Downloaded", style="dim")
+    table.add_column("Valid", style="red")
+    
+    for file_info in cached_files:
+        duration_str = f"{file_info['duration_min']:.1f}m" if file_info['duration_min'] > 0 else "-"
+        valid_str = "✓" if file_info['valid'] else "✗"
+        valid_style = "green" if file_info['valid'] else "red"
+        
+        table.add_row(
+            file_info['cache_key'],
+            file_info['url'],
+            str(file_info['size_mb']),
+            duration_str,
+            file_info['format'] or "-",
+            file_info['download_time'],
+            f"[{valid_style}]{valid_str}[/{valid_style}]"
+        )
+    
+    console.print(table)
+    
+    # Show cache info
+    cache_info = cache.get_cache_info()
+    console.print(f"\n[dim]Cache directory: {cache_info['cache_dir']}[/dim]")
+    console.print(f"[dim]Total: {cache_info['valid_files']}/{cache_info['total_files']} files, {cache_info['total_size_mb']} MB ({cache_info['usage_percent']:.1f}% of limit)[/dim]")
+
+
+def cache_clear_command(
+    confirm: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompt")
+):
+    """Clear all cached files."""
+    from ..utils.download_cache import get_download_cache
+    
+    cache = get_download_cache()
+    cache_info = cache.get_cache_info()
+    
+    if cache_info['total_files'] == 0:
+        console.print("[yellow]No cached files to clear[/yellow]")
+        return
+    
+    # Show what will be cleared
+    console.print(f"[yellow]This will remove {cache_info['total_files']} cached files ({cache_info['total_size_mb']} MB)[/yellow]")
+    
+    if not confirm:
+        import typer
+        confirm = typer.confirm("Are you sure you want to clear the cache?")
+        
+    if not confirm:
+        console.print("Cache clear cancelled")
+        return
+    
+    try:
+        files_removed, size_freed = cache.clear_cache()
+        console.print(f"[green]✓ Cache cleared: {files_removed} files, {size_freed} MB freed[/green]")
+        
+    except Exception as e:
+        console.print(f"[red]✗ Failed to clear cache: {e}[/red]")
+        raise typer.Exit(1)
+
+
+def cache_info_command():
+    """Show cache information and statistics."""
+    from ..utils.download_cache import get_download_cache
+    
+    cache = get_download_cache()
+    cache_info = cache.get_cache_info()
+    
+    # Create info table
+    table = Table(title="Cache Information")
+    table.add_column("Property", style="cyan", no_wrap=True)
+    table.add_column("Value", style="magenta")
+    
+    table.add_row("Cache Directory", cache_info['cache_dir'])
+    table.add_row("Total Files", str(cache_info['total_files']))
+    table.add_row("Valid Files", str(cache_info['valid_files']))
+    table.add_row("Total Size", f"{cache_info['total_size_mb']} MB")
+    table.add_row("Size Limit", f"{cache_info['max_size_gb']} GB")
+    table.add_row("Usage", f"{cache_info['usage_percent']:.1f}%")
+    
+    console.print(table)
+    
+    # Check if cleanup needed
+    if cache_info['usage_percent'] > 80:
+        console.print(f"\n[yellow]⚠ Cache usage is high ({cache_info['usage_percent']:.1f}%). Consider cleaning up old files.[/yellow]")
+
+
+def cache_remove_command(
+    url: str = typer.Argument(..., help="URL of cached file to remove")
+):
+    """Remove specific cached file."""
+    from ..utils.download_cache import get_download_cache
+    
+    cache = get_download_cache()
+    
+    # Check if file is cached
+    cached_path = cache.get_cached_file(url)
+    if not cached_path:
+        console.print(f"[yellow]File not found in cache: {url}[/yellow]")
+        return
+    
+    try:
+        success = cache.remove_from_cache(url)
+        if success:
+            console.print(f"[green]✓ Removed from cache: {url[:50]}...[/green]")
+        else:
+            console.print(f"[red]✗ Failed to remove from cache[/red]")
+            raise typer.Exit(1)
+            
+    except Exception as e:
+        console.print(f"[red]✗ Error removing from cache: {e}[/red]")
+        raise typer.Exit(1)

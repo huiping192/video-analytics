@@ -57,29 +57,50 @@ python -m video_analytics info <video_file>         # Show video metadata
 python -m video_analytics info <video_file> --simple # Use simple mode (no FFmpeg)
 python -m video_analytics validate <video_file>     # Validate file processing
 
-# Individual analysis types
-python -m video_analytics bitrate <video_file>      # Video bitrate analysis
-python -m video_analytics audio <video_file>        # Audio bitrate analysis  
-python -m video_analytics fps <video_file>          # FPS and drop frame analysis
+# Individual analysis types (supports local files, HTTP URLs, and HLS streams)
+python -m video_analytics bitrate <input>           # Video bitrate analysis
+python -m video_analytics audio <input>             # Audio bitrate analysis  
+python -m video_analytics fps <input>               # FPS and drop frame analysis
+
+# Examples with different input types:
+python -m video_analytics bitrate /path/to/video.mp4                    # Local file
+python -m video_analytics bitrate https://example.com/video.mp4         # HTTP URL
+python -m video_analytics bitrate https://stream.example.com/live.m3u8  # HLS stream
 
 # Batch processing
 python -m video_analytics batch_bitrate <file1> <file2> <file3>
 python -m video_analytics batch_audio <file1> <file2> <file3>
 python -m video_analytics batch_fps <file1> <file2> <file3>
 
-# Chart generation
-python -m video_analytics chart <video_file>        # Combined analysis chart
-python -m video_analytics chart <video_file> --type summary  # Summary chart
-python -m video_analytics chart <video_file> --type all     # Full report
-python -m video_analytics batch_chart <file1> <file2>       # Batch chart generation
+# Chart generation (supports all input types)
+python -m video_analytics chart <input>             # Combined analysis chart
+python -m video_analytics chart <input> --type summary  # Summary chart
+python -m video_analytics chart <input> --type all     # Full report
+python -m video_analytics batch_chart <file1> <file2>   # Batch chart generation
+
+# Download management
+python -m video_analytics download <hls_url>        # Download HLS stream or HTTP video
+```
+
+**Download and Cache Management:**
+```bash
+# Download commands
+python -m video_analytics download <hls_url>            # Download HLS stream
+python -m video_analytics download <http_url> -o video.mp4  # Download HTTP video
+
+# Cache management
+python -m video_analytics cache list               # List cached downloads
+python -m video_analytics cache info               # Show cache statistics
+python -m video_analytics cache clear              # Clear all cache
+python -m video_analytics cache remove <url>       # Remove specific cached file
 ```
 
 **Configuration Management:**
 ```bash
-# Configuration commands (new feature)
-python -m video_analytics config show          # Show current configuration
-python -m video_analytics config set interval 5.0   # Set sampling interval
-python -m video_analytics config reset         # Reset to defaults
+# Configuration commands
+python -m video_analytics config show              # Show current configuration
+python -m video_analytics config set interval 5.0 # Set sampling interval
+python -m video_analytics config reset             # Reset to defaults
 ```
 
 **Common Options:**
@@ -90,6 +111,8 @@ python -m video_analytics config reset         # Reset to defaults
 --csv output.csv         # Export CSV data  
 --verbose               # Show detailed information
 --config high_res       # Chart configuration (default, high_res, compact)
+--force-download        # Force re-download even if cached
+--workers 10            # Maximum download threads for HLS (1-20)
 ```
 
 ## Technology Stack (Implemented)
@@ -101,6 +124,8 @@ python -m video_analytics config reset         # Reset to defaults
 - **typer>=0.9.0** - Modern CLI framework
 - **rich>=13.0.0** - Enhanced CLI output with colors and tables
 - **tqdm>=4.64.0** - Progress bars and status indicators
+- **requests>=2.25.0** - HTTP downloads and URL validation
+- **m3u8>=3.0.0** - HLS playlist parsing and processing
 
 ## Core Architecture Components
 
@@ -111,11 +136,12 @@ python -m video_analytics config reset         # Reset to defaults
 - Nested configuration sub-commands under `config` group
 
 ### 2. File Processing (`video_analytics.core`)
-- **FileProcessor**: Main video file processor using FFmpeg
-- **SimpleProcessor**: Lightweight processor that works without FFmpeg
-- **VideoMetadata**: Dataclass for video file metadata
-- **ProcessedFile**: Abstraction for processed video files
-- **safe_process_file()**: Error-safe file processing wrapper
+- **FileProcessor**: Unified processor for local files, HTTP URLs, and HLS streams
+- **HLSDownloader**: High-performance HLS stream downloader with concurrent segments
+- **SimpleProcessor**: Lightweight processor that works without FFmpeg  
+- **VideoMetadata**: Enhanced dataclass with URL and cache information
+- **ProcessedFile**: Abstraction supporting downloaded content
+- **safe_process_file()**: Error-safe processing with download support
 
 ### 3. Analysis Engines (`video_analytics.core`)
 - **VideoBitrateAnalyzer**: Analyzes video bitrate variations over time
@@ -123,13 +149,19 @@ python -m video_analytics config reset         # Reset to defaults
 - **FPSAnalyzer**: Analyzes frame rate consistency and drop detection
 - All analyzers support configurable sampling intervals and export to JSON/CSV
 
-### 4. Configuration Management (`video_analytics.utils.config`)
+### 4. Download and Cache System (`video_analytics.utils`)
+- **DownloadCache**: Intelligent caching system for downloaded content
+- **URL validators**: Comprehensive validation for HTTP/HLS URLs
+- **Cache management**: Automatic cleanup, size limits, integrity checks
+- **Progress tracking**: Rich progress indicators for downloads
+
+### 5. Configuration Management (`video_analytics.utils.config`)
 - **ConfigManager**: Persistent user configuration in `~/.video-analytics/config.json`
 - **AnalysisConfig**: Dataclass with default parameters
 - **get_merged_config()**: CLI arguments override config file settings
 - Support for common settings: interval, output_dir, chart_config, export formats
 
-### 5. Visualization (`video_analytics.visualization`)
+### 6. Visualization (`video_analytics.visualization`)
 - **ChartGenerator**: Matplotlib-based chart generation
 - **ChartConfig**: Configuration for chart styling and output
 - **ChartStyles**: Predefined styles (default, high_res, compact)
@@ -140,11 +172,13 @@ python -m video_analytics config reset         # Reset to defaults
 When working with this project:
 
 1. **FFmpeg dependency** - Always check FFmpeg availability first with `python -m video_analytics check`
-2. **Large file handling** - Optimized for 3+ hour video files with configurable sampling intervals
-3. **Chinese documentation** - Technical specs in `documents/` provide detailed implementation guidance
-4. **Error handling** - Robust error handling with informative messages and fallback modes
-5. **Memory efficiency** - Streaming processing approach for large video files
-6. **Export capabilities** - All analysis results can be exported to JSON/CSV formats
+2. **HLS and URL support** - Seamless support for local files, HTTP URLs, and HLS streams
+3. **Large file optimization** - Auto-optimized sampling intervals for HLS streams (1-3 hour videos)
+4. **Download caching** - Intelligent caching prevents re-downloading large HLS streams
+5. **Concurrent downloads** - Multi-threaded HLS segment downloading for faster processing
+6. **Error handling** - Comprehensive error handling with fallback modes and user-friendly messages
+7. **Memory efficiency** - Streaming processing and temporary file management for large videos
+8. **Export capabilities** - All analysis results can be exported to JSON/CSV formats
 
 ## Development Workflow
 

@@ -22,7 +22,12 @@ from .commands import (
     batch_chart_command,
     config_show_command,
     config_set_command,
-    config_reset_command
+    config_reset_command,
+    download_command,
+    cache_list_command,
+    cache_clear_command,
+    cache_info_command,
+    cache_remove_command
 )
 
 app = typer.Typer(
@@ -47,12 +52,23 @@ app.command("batch_fps", help="Analyze FPS for multiple videos")(batch_fps_comma
 app.command("chart", help="Generate analysis charts")(chart_command)
 app.command("batch_chart", help="Generate charts for multiple videos")(batch_chart_command)
 
+# Download and cache management commands
+app.command("download", help="Download video from HTTP URL or HLS stream")(download_command)
+
 # Configuration management commands
 config_app = typer.Typer(help="Configuration management")
 config_app.command("show", help="Show current configuration")(config_show_command)
 config_app.command("set", help="Set a configuration value")(config_set_command)
 config_app.command("reset", help="Reset configuration to defaults")(config_reset_command)
 app.add_typer(config_app, name="config")
+
+# Cache management commands
+cache_app = typer.Typer(help="Download cache management")
+cache_app.command("list", help="List all cached files")(cache_list_command)
+cache_app.command("clear", help="Clear all cached files")(cache_clear_command)
+cache_app.command("info", help="Show cache information")(cache_info_command)
+cache_app.command("remove", help="Remove specific cached file")(cache_remove_command)
+app.add_typer(cache_app, name="cache")
 
 
 def main():

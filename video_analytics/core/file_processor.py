@@ -1,13 +1,20 @@
 from dataclasses import dataclass
 from typing import List, Optional
 import os
+import tempfile
+import requests
 import ffmpeg
 from ..utils.logger import get_logger
 from ..utils.validators import (
     validate_file_path,
     validate_metadata,
+    validate_input,
+    is_url,
+    is_hls_url,
     ValidationError,
 )
+from ..utils.download_cache import get_download_cache
+from .hls_downloader import HLSDownloader
 
 
 @dataclass
@@ -31,13 +38,19 @@ class VideoMetadata:
     channels: int          # channels
     sample_rate: int       # sample rate
     audio_bitrate: int     # audio bitrate (bps)
+    
+    # Source info
+    original_url: Optional[str] = None  # Original URL if downloaded
+    is_cached: bool = False             # Whether file is from cache
 
 
 class ProcessedFile:
     """Processed video file object"""
     
-    def __init__(self, file_path: str):
+    def __init__(self, file_path: str, original_url: Optional[str] = None, is_cached: bool = False):
         self.file_path = file_path
+        self.original_url = original_url
+        self.is_cached = is_cached
         self.metadata = None
     
     def load_metadata(self) -> VideoMetadata:
@@ -81,6 +94,10 @@ class ProcessedFile:
                 channels=audio_stream.get('channels', 0) if audio_stream else 0,
                 sample_rate=audio_stream.get('sample_rate', 0) if audio_stream else 0,
                 audio_bitrate=int(audio_stream.get('bit_rate', 0)) if audio_stream else 0,
+                
+                # Source info
+                original_url=self.original_url,
+                is_cached=self.is_cached,
             )
             
         except ffmpeg.Error as e:
@@ -99,13 +116,48 @@ class ProcessedFile:
 class FileProcessor:
     """File processor"""
     
-    def process_input(self, file_path: str) -> ProcessedFile:
-        """Process input file"""
-        # Validate file via shared validators
-        validate_file_path(file_path)
+    def __init__(self, use_cache: bool = True, max_workers: int = 10):
+        """
+        Initialize file processor
         
-        # Create processed file
-        processed_file = ProcessedFile(file_path)
+        Args:
+            use_cache: Whether to use download cache
+            max_workers: Maximum download threads for HLS
+        """
+        self.use_cache = use_cache
+        self.max_workers = max_workers
+        self.cache = get_download_cache() if use_cache else None
+        self.hls_downloader = HLSDownloader(max_workers=max_workers)
+        self.logger = get_logger(__name__)
+    
+    def process_input(self, input_path: str, force_download: bool = False) -> ProcessedFile:
+        """
+        Process input - can be local file, HTTP URL, or HLS stream
+        
+        Args:
+            input_path: Local file path, HTTP URL, or HLS stream URL
+            force_download: Force re-download even if cached
+            
+        Returns:
+            ProcessedFile object
+        """
+        # Validate and determine input type
+        input_type = validate_input(input_path)
+        
+        if input_type == 'file':
+            # Local file - process directly
+            processed_file = ProcessedFile(input_path)
+        
+        elif input_type == 'hls':
+            # HLS stream - download first
+            processed_file = self._process_hls_input(input_path, force_download)
+        
+        elif input_type == 'url':
+            # HTTP URL - download first
+            processed_file = self._process_url_input(input_path, force_download)
+        
+        else:
+            raise ValidationError(f"Unsupported input type: {input_type}")
         
         # Load metadata to validate
         metadata = processed_file.load_metadata()
@@ -114,6 +166,107 @@ class FileProcessor:
         validate_metadata(metadata)
         
         return processed_file
+    
+    def _process_hls_input(self, hls_url: str, force_download: bool = False) -> ProcessedFile:
+        """Process HLS stream input"""
+        self.logger.info(f"Processing HLS stream: {hls_url[:50]}...")
+        
+        # Check cache first (unless forced download)
+        if self.use_cache and not force_download:
+            cached_path = self.cache.get_cached_file(hls_url)
+            if cached_path:
+                self.logger.info("Using cached HLS file")
+                return ProcessedFile(cached_path, original_url=hls_url, is_cached=True)
+        
+        # Download HLS stream
+        self.logger.info("Downloading HLS stream...")
+        download_result = self.hls_downloader.download_hls_stream(hls_url)
+        
+        if not download_result.success:
+            raise ValidationError(f"HLS download failed: {download_result.error_message}")
+        
+        # Add to cache
+        if self.use_cache and download_result.local_file_path:
+            self.cache.add_to_cache(
+                url=hls_url,
+                file_path=download_result.local_file_path,
+                duration=download_result.duration,
+                format_name='mp4'
+            )
+        
+        return ProcessedFile(
+            download_result.local_file_path,
+            original_url=hls_url,
+            is_cached=False
+        )
+    
+    def _process_url_input(self, url: str, force_download: bool = False) -> ProcessedFile:
+        """Process HTTP URL input"""
+        self.logger.info(f"Processing HTTP URL: {url[:50]}...")
+        
+        # Check cache first (unless forced download)
+        if self.use_cache and not force_download:
+            cached_path = self.cache.get_cached_file(url)
+            if cached_path:
+                self.logger.info("Using cached URL file")
+                return ProcessedFile(cached_path, original_url=url, is_cached=True)
+        
+        # Download file
+        local_path = self._download_http_file(url)
+        
+        # Add to cache
+        if self.use_cache and local_path:
+            self.cache.add_to_cache(url=url, file_path=local_path)
+        
+        return ProcessedFile(local_path, original_url=url, is_cached=False)
+    
+    def _download_http_file(self, url: str) -> str:
+        """Download file from HTTP URL"""
+        try:
+            # Create temporary file
+            import tempfile
+            from urllib.parse import urlparse
+            import os
+            
+            parsed_url = urlparse(url)
+            filename = os.path.basename(parsed_url.path) or 'video'
+            if '.' not in filename:
+                filename += '.mp4'  # Default extension
+            
+            temp_dir = tempfile.gettempdir()
+            local_path = os.path.join(temp_dir, filename)
+            
+            # Download with progress
+            from rich.progress import Progress, BarColumn, TextColumn, DownloadColumn
+            from rich.console import Console
+            
+            console = Console()
+            
+            with requests.get(url, stream=True, timeout=30) as response:
+                response.raise_for_status()
+                
+                total_size = int(response.headers.get('content-length', 0))
+                
+                with Progress(
+                    TextColumn("[progress.description]{task.description}"),
+                    BarColumn(),
+                    DownloadColumn(),
+                    console=console
+                ) as progress:
+                    
+                    download_task = progress.add_task("Downloading", total=total_size)
+                    
+                    with open(local_path, 'wb') as f:
+                        for chunk in response.iter_content(chunk_size=8192):
+                            if chunk:
+                                f.write(chunk)
+                                progress.update(download_task, advance=len(chunk))
+            
+            self.logger.info(f"Downloaded to: {local_path}")
+            return local_path
+            
+        except Exception as e:
+            raise ValidationError(f"HTTP download failed: {e}")
 
 
 class FileProcessingError(Exception):
@@ -131,38 +284,45 @@ class CorruptedFileError(FileProcessingError):
     pass
 
 
-def safe_process_file(file_path: str) -> Optional[ProcessedFile]:
-    """Safely process a file"""
+def safe_process_file(input_path: str, force_download: bool = False, 
+                      use_cache: bool = True, max_workers: int = 10) -> Optional[ProcessedFile]:
+    """
+    Safely process input - file, URL, or HLS stream
+    
+    Args:
+        input_path: Local file path, HTTP URL, or HLS stream URL
+        force_download: Force re-download even if cached
+        use_cache: Whether to use download cache
+        max_workers: Maximum download threads for HLS
+        
+    Returns:
+        ProcessedFile if successful, None on error
+    """
     try:
-        processor = FileProcessor()
-        return processor.process_input(file_path)
+        processor = FileProcessor(use_cache=use_cache, max_workers=max_workers)
+        return processor.process_input(input_path, force_download=force_download)
         
     except FileNotFoundError:
-        from ..utils.logger import get_logger
         logger = get_logger(__name__)
-        logger.error(f"File not found - {file_path}")
+        logger.error(f"File not found - {input_path}")
         return None
         
     except PermissionError:
-        from ..utils.logger import get_logger
         logger = get_logger(__name__)
-        logger.error(f"No permission to read file - {file_path}")
+        logger.error(f"No permission to read file - {input_path}")
         return None
         
     except ValidationError as e:
-        from ..utils.logger import get_logger
         logger = get_logger(__name__)
         logger.error(f"Validation error - {e}")
         return None
 
     except ValueError as e:
-        from ..utils.logger import get_logger
         logger = get_logger(__name__)
         logger.error(f"File format issue - {e}")
         return None
         
     except Exception as e:
-        from ..utils.logger import get_logger
         logger = get_logger(__name__)
-        logger.exception(f"Unknown error while processing file: {e}")
+        logger.exception(f"Unknown error while processing input: {e}")
         return None
