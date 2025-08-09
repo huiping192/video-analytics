@@ -2,6 +2,12 @@ from dataclasses import dataclass
 from typing import List, Optional
 import os
 import ffmpeg
+from ..utils.logger import get_logger
+from ..utils.validators import (
+    validate_file_path,
+    validate_metadata,
+    ValidationError,
+)
 
 
 @dataclass
@@ -95,8 +101,8 @@ class FileProcessor:
     
     def process_input(self, file_path: str) -> ProcessedFile:
         """Process input file"""
-        # Validate file
-        self._validate_file(file_path)
+        # Validate file via shared validators
+        validate_file_path(file_path)
         
         # Create processed file
         processed_file = ProcessedFile(file_path)
@@ -105,32 +111,9 @@ class FileProcessor:
         metadata = processed_file.load_metadata()
         
         # Validate video content
-        self._validate_video_content(metadata)
+        validate_metadata(metadata)
         
         return processed_file
-    
-    def _validate_file(self, file_path: str):
-        """Validate basic file information"""
-        if not os.path.exists(file_path):
-            raise FileNotFoundError(f"File not found: {file_path}")
-        
-        if not os.access(file_path, os.R_OK):
-            raise PermissionError(f"File not readable: {file_path}")
-        
-        file_size = os.path.getsize(file_path)
-        if file_size < 1024:  # < 1KB
-            raise ValueError("File too small; may not be a valid video")
-    
-    def _validate_video_content(self, metadata: VideoMetadata):
-        """Validate video content"""
-        if metadata.duration <= 0:
-            raise ValueError("Unable to get video duration")
-        
-        if metadata.width <= 0 or metadata.height <= 0:
-            raise ValueError("Unable to get video resolution")
-        
-        if not metadata.video_codec:
-            raise ValueError("No video stream found")
 
 
 class FileProcessingError(Exception):
@@ -155,17 +138,31 @@ def safe_process_file(file_path: str) -> Optional[ProcessedFile]:
         return processor.process_input(file_path)
         
     except FileNotFoundError:
-        print(f"Error: File not found - {file_path}")
+        from ..utils.logger import get_logger
+        logger = get_logger(__name__)
+        logger.error(f"File not found - {file_path}")
         return None
         
     except PermissionError:
-        print(f"Error: No permission to read file - {file_path}")
+        from ..utils.logger import get_logger
+        logger = get_logger(__name__)
+        logger.error(f"No permission to read file - {file_path}")
         return None
         
+    except ValidationError as e:
+        from ..utils.logger import get_logger
+        logger = get_logger(__name__)
+        logger.error(f"Validation error - {e}")
+        return None
+
     except ValueError as e:
-        print(f"Error: File format issue - {e}")
+        from ..utils.logger import get_logger
+        logger = get_logger(__name__)
+        logger.error(f"File format issue - {e}")
         return None
         
     except Exception as e:
-        print(f"Unknown error: {e}")
+        from ..utils.logger import get_logger
+        logger = get_logger(__name__)
+        logger.exception(f"Unknown error while processing file: {e}")
         return None

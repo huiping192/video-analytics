@@ -6,6 +6,7 @@ Main entry and configuration for the video analytics CLI.
 
 import typer
 from rich.console import Console
+from ..utils.logger import setup_logging
 
 from .commands import (
     info_command,
@@ -46,6 +47,8 @@ app.command("batch_chart", help="Generate charts for multiple videos")(batch_cha
 def main():
     """Main entry point"""
     try:
+        # Initialize logging early with sensible defaults
+        setup_logging()
         app()
     except KeyboardInterrupt:
         console.print("\n[yellow]Operation canceled by user[/yellow]")

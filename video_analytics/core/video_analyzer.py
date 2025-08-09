@@ -11,6 +11,8 @@ from datetime import datetime
 import numpy as np
 
 from .file_processor import ProcessedFile
+from ..utils.logger import get_logger
+from ..utils.validators import ensure_non_empty_sequence, normalize_interval
 
 
 @dataclass
@@ -62,6 +64,7 @@ class VideoBitrateAnalyzer:
     
     def __init__(self, sample_interval: float = 10.0):
         self.sample_interval = sample_interval
+        self._logger = get_logger(__name__)
     
     def analyze(self, processed_file: ProcessedFile) -> VideoBitrateAnalysis:
         """Analyze video bitrate"""
@@ -70,22 +73,20 @@ class VideoBitrateAnalyzer:
         if not metadata.video_codec:
             raise ValueError("No video stream found")
         
-        print(f"Analyzing video bitrate (interval: {self.sample_interval}s)")
+        self._logger.info(f"Analyzing video bitrate (interval: {self.sample_interval}s)")
         
         # Optimize interval for long videos
-        optimized_interval = self._optimize_for_large_files(metadata.duration)
+        optimized_interval = normalize_interval(self.sample_interval, metadata.duration)
         if optimized_interval != self.sample_interval:
-            print(f"Long video detected, adjusting interval to: {optimized_interval}s")
-            interval = optimized_interval
-        else:
-            interval = self.sample_interval
+            self._logger.debug(f"Long video detected, adjusting interval to: {optimized_interval}s")
+        interval = optimized_interval
         
         # Generate sample timestamps
         duration = metadata.duration
         sample_times = np.arange(0, duration, interval)
         
-        print(f"Video duration: {duration:.1f}s")
-        print(f"Total sample points: {len(sample_times)} ...")
+        self._logger.debug(f"Video duration: {duration:.1f}s")
+        self._logger.debug(f"Total sample points: {len(sample_times)} ...")
         
         # Sampling analysis
         data_points = []
@@ -97,16 +98,15 @@ class VideoBitrateAnalyzer:
                 # Progress
                 if (i + 1) % 10 == 0 or i == len(sample_times) - 1:
                     progress = (i + 1) / len(sample_times) * 100
-                    print(f"Progress: {progress:.1f}%")
+                    self._logger.debug(f"Progress: {progress:.1f}%")
                     
             except Exception as e:
-                print(f"Warning: sampling failed at {timestamp:.1f}s: {e}")
+                self._logger.warning(f"Sampling failed at {timestamp:.1f}s: {e}")
                 # Fallback to overall average bitrate ratio
                 fallback_bitrate = metadata.video_bitrate or (metadata.bit_rate * 0.8)
                 data_points.append(BitrateDataPoint(timestamp, fallback_bitrate))
         
-        if not data_points:
-            raise ValueError("Unable to get valid bitrate data")
+        ensure_non_empty_sequence("bitrate data points", data_points)
         
         # Compute statistics
         bitrates = [dp.bitrate for dp in data_points]
@@ -178,10 +178,10 @@ class VideoBitrateAnalyzer:
                 return self._get_fallback_bitrate(file_path)
                 
         except subprocess.CalledProcessError as e:
-            print(f"FFprobe command failed: {e}, using fallback")
+            self._logger.warning(f"FFprobe command failed: {e}, using fallback")
             return self._get_fallback_bitrate(file_path)
         except subprocess.TimeoutExpired:
-            print("FFprobe timed out, using fallback")
+            self._logger.warning("FFprobe timed out, using fallback")
             return self._get_fallback_bitrate(file_path)
     
     def _get_fallback_bitrate(self, file_path: str) -> float:
@@ -263,7 +263,7 @@ class VideoBitrateAnalyzer:
         with open(output_path, 'w', encoding='utf-8') as f:
             json.dump(data, f, indent=2, ensure_ascii=False)
         
-        print(f"Analysis exported to: {output_path}")
+        self._logger.info(f"Analysis exported to: {output_path}")
     
     def export_to_csv(self, analysis: VideoBitrateAnalysis, output_path: str):
         """Export to CSV"""
@@ -276,7 +276,7 @@ class VideoBitrateAnalyzer:
             for dp in analysis.data_points:
                 writer.writerow([dp.timestamp, dp.bitrate / 1000000])  # Mbps
         
-        print(f"Data exported to: {output_path}")
+        self._logger.info(f"Data exported to: {output_path}")
 
 
 def analyze_multiple_videos(video_files: List[str], sample_interval: float = 10.0) -> List[VideoBitrateAnalysis]:
@@ -285,6 +285,7 @@ def analyze_multiple_videos(video_files: List[str], sample_interval: float = 10.
     
     processor = FileProcessor()
     analyzer = VideoBitrateAnalyzer(sample_interval)
+    _logger = get_logger(__name__)
     
     results = []
     for video_file in video_files:
@@ -292,9 +293,9 @@ def analyze_multiple_videos(video_files: List[str], sample_interval: float = 10.
             processed_file = processor.process_input(video_file)
             result = analyzer.analyze(processed_file)
             results.append(result)
-            print(f"✓ Completed analysis: {video_file}")
+            _logger.info(f"Completed analysis: {video_file}")
             
         except Exception as e:
-            print(f"✗ Analysis failed {video_file}: {e}")
+            _logger.error(f"Analysis failed {video_file}: {e}")
     
     return results

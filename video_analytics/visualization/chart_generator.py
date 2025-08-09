@@ -16,6 +16,7 @@ import numpy as np
 from ..core.video_analyzer import VideoBitrateAnalysis
 from ..core.audio_analyzer import AudioBitrateAnalysis
 from ..core.fps_analyzer import FPSAnalysis
+from ..utils.logger import get_logger
 
 
 @dataclass
@@ -39,6 +40,7 @@ class ChartGenerator:
     def __init__(self):
         # Default style
         plt.style.use('default')
+        self._logger = get_logger(__name__)
         
         # Default colors
         self.colors = {
@@ -374,7 +376,7 @@ Dropped Frames: {fps_analysis.total_dropped_frames}
         results = {}
         config = ChartConfig(output_dir=output_dir)
         
-        print("Generating charts...")
+        self._logger.info("Generating charts...")
         
         try:
             # 1) Combined analysis chart
@@ -382,38 +384,38 @@ Dropped Frames: {fps_analysis.total_dropped_frames}
             results['combined'] = self.generate_combined_chart(
                 video_analysis, audio_analysis, fps_analysis, config
             )
-            print("✓ Combined analysis chart generated")
+            self._logger.info("Combined analysis chart generated")
             
             # 2) Video bitrate chart
             config.title = "Video Bitrate Detailed Analysis"
             results['video_bitrate'] = self.generate_video_bitrate_chart(
                 video_analysis, config
             )
-            print("✓ Video bitrate chart generated")
+            self._logger.info("Video bitrate chart generated")
             
             # 3) Audio bitrate chart
             config.title = "Audio Bitrate Detailed Analysis"
             results['audio_bitrate'] = self.generate_audio_bitrate_chart(
                 audio_analysis, config
             )
-            print("✓ Audio bitrate chart generated")
+            self._logger.info("Audio bitrate chart generated")
             
             # 4) FPS analysis chart
             config.title = "FPS Detailed Analysis"
             results['fps'] = self.generate_fps_chart(fps_analysis, config)
-            print("✓ FPS analysis chart generated")
+            self._logger.info("FPS analysis chart generated")
             
             # 5) Summary chart
             config.title = "Video Analysis Summary"
             results['summary'] = self.generate_summary_chart(
                 video_analysis, audio_analysis, fps_analysis, config
             )
-            print("✓ Summary chart generated")
+            self._logger.info("Summary chart generated")
             
-            print(f"\nAll charts saved to: {output_dir}")
+            self._logger.info(f"All charts saved to: {output_dir}")
             
         except Exception as e:
-            print(f"Error generating charts: {e}")
+            self._logger.exception(f"Error generating charts: {e}")
             raise
         
         return results

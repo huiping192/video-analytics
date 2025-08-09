@@ -11,6 +11,8 @@ from datetime import datetime
 import numpy as np
 
 from .file_processor import ProcessedFile
+from ..utils.logger import get_logger
+from ..utils.validators import ensure_non_empty_sequence
 
 
 @dataclass
@@ -86,6 +88,7 @@ class AudioBitrateAnalyzer:
     def __init__(self, sample_interval: float = 15.0):
         self.sample_interval = sample_interval  # audio sampling interval
         self._bitrate_cache = {}  # cache
+        self._logger = get_logger(__name__)
     
     def analyze(self, processed_file: ProcessedFile) -> AudioBitrateAnalysis:
         """Analyze audio bitrate"""
@@ -94,13 +97,13 @@ class AudioBitrateAnalyzer:
         if not metadata.audio_codec:
             raise ValueError("No audio stream found")
         
-        print(f"Analyzing audio bitrate (interval: {self.sample_interval}s)")
+        self._logger.info(f"Analyzing audio bitrate (interval: {self.sample_interval}s)")
         
         # 生成采样时间点
         duration = metadata.duration
         sample_times = np.arange(0, duration, self.sample_interval)
         
-        print(f"Total sample points: {len(sample_times)} ...")
+        self._logger.debug(f"Total sample points: {len(sample_times)} ...")
         
         # 采样分析
         data_points = []
@@ -112,16 +115,15 @@ class AudioBitrateAnalyzer:
                 # progress
                 if (i + 1) % 5 == 0 or i == len(sample_times) - 1:
                     progress = (i + 1) / len(sample_times) * 100
-                    print(f"Audio analysis progress: {progress:.1f}%")
+                    self._logger.debug(f"Audio analysis progress: {progress:.1f}%")
                     
             except Exception as e:
-                print(f"Warning: audio sampling failed at {timestamp:.1f}s: {e}")
+                self._logger.warning(f"Audio sampling failed at {timestamp:.1f}s: {e}")
                 # fallback to metadata bitrate
                 fallback_bitrate = metadata.audio_bitrate or (metadata.bit_rate * 0.1) if metadata.bit_rate else 128000
                 data_points.append(AudioBitrateDataPoint(timestamp, fallback_bitrate))
         
-        if not data_points:
-            raise ValueError("Unable to get valid audio bitrate data")
+        ensure_non_empty_sequence("audio bitrate data points", data_points)
         
         # 计算统计信息
         bitrates = [dp.bitrate for dp in data_points]
@@ -206,7 +208,7 @@ class AudioBitrateAnalyzer:
             return self._get_fallback_audio_bitrate(file_path)
             
         except (subprocess.TimeoutExpired, subprocess.SubprocessError, Exception) as e:
-            print(f"Audio bitrate analysis failed at {timestamp:.1f}s: {e}")
+            self._logger.warning(f"Audio bitrate analysis failed at {timestamp:.1f}s: {e}")
             return self._get_fallback_audio_bitrate(file_path)
     
     def _get_fallback_audio_bitrate(self, file_path: str) -> float:
@@ -486,16 +488,16 @@ class AudioBitrateAnalyzer:
         with open(output_path, 'w', encoding='utf-8') as f:
             json.dump(data, f, indent=2, ensure_ascii=False)
         
-        print(f"Audio analysis exported to: {output_path}")
+        self._logger.info(f"Audio analysis exported to: {output_path}")
         
         # Print key info
-        print(f"\nAudio quality assessment:")
-        print(f"- Quality level: {quality_assessment['quality_level']}")
-        print(f"- Stability: {quality_assessment['stability']}")
+        self._logger.info("Audio quality assessment:")
+        self._logger.info(f"- Quality level: {quality_assessment['quality_level']}")
+        self._logger.info(f"- Stability: {quality_assessment['stability']}")
         vbr_status = "Yes" if quality_assessment['is_vbr'] else "No"
-        print(f"- VBR: {vbr_status}")
+        self._logger.info(f"- VBR: {vbr_status}")
         if quality_assessment['bitrate_changes']['significant_changes'] > 0:
-            print(f"- Significant bitrate changes: {quality_assessment['bitrate_changes']['significant_changes']}")
+            self._logger.info(f"- Significant bitrate changes: {quality_assessment['bitrate_changes']['significant_changes']}")
     
     def export_to_csv(self, analysis: AudioBitrateAnalysis, output_path: str):
         """Export to CSV format"""
@@ -508,7 +510,7 @@ class AudioBitrateAnalyzer:
             for dp in analysis.data_points:
                 writer.writerow([dp.timestamp, dp.bitrate, dp.bitrate / 1000])  # 保留原始值和kbps
         
-        print(f"Data exported to: {output_path}")
+        self._logger.info(f"Data exported to: {output_path}")
 
 
 def analyze_multiple_audio(video_files: List[str], sample_interval: float = 15.0) -> List[AudioBitrateAnalysis]:
@@ -517,6 +519,7 @@ def analyze_multiple_audio(video_files: List[str], sample_interval: float = 15.0
     
     processor = FileProcessor()
     analyzer = AudioBitrateAnalyzer(sample_interval)
+    _logger = get_logger(__name__)
     
     results = []
     for video_file in video_files:
@@ -524,9 +527,9 @@ def analyze_multiple_audio(video_files: List[str], sample_interval: float = 15.0
             processed_file = processor.process_input(video_file)
             result = analyzer.analyze(processed_file)
             results.append(result)
-            print(f"✓ Completed audio analysis: {video_file}")
+            _logger.info(f"Completed audio analysis: {video_file}")
             
         except Exception as e:
-            print(f"✗ Audio analysis failed {video_file}: {e}")
+            _logger.error(f"Audio analysis failed {video_file}: {e}")
     
     return results

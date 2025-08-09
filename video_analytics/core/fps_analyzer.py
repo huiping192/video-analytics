@@ -11,6 +11,8 @@ from datetime import datetime
 import numpy as np
 
 from .file_processor import ProcessedFile
+from ..utils.logger import get_logger
+from ..utils.validators import ensure_non_empty_sequence
 
 
 @dataclass
@@ -80,6 +82,7 @@ class FPSAnalyzer:
         self.sample_interval = sample_interval
         self.drop_threshold = 0.8  # < 80% of expected FPS considered drop
         self.vfr_threshold = 0.1   # CV > 10% considered VFR
+        self._logger = get_logger(__name__)
     
     def analyze(self, processed_file: ProcessedFile) -> FPSAnalysis:
         """Analyze video FPS"""
@@ -92,13 +95,13 @@ class FPSAnalyzer:
         if declared_fps <= 0:
             raise ValueError("Unable to get FPS metadata")
         
-        print(f"Analyzing FPS (declared: {declared_fps:.2f}fps, interval: {self.sample_interval}s)")
+        self._logger.info(f"Analyzing FPS (declared: {declared_fps:.2f}fps, interval: {self.sample_interval}s)")
         
         # Generate sampling timestamps
         duration = metadata.duration
         sample_times = np.arange(0, duration, self.sample_interval)
         
-        print(f"Total sample points: {len(sample_times)} ...")
+        self._logger.debug(f"Total sample points: {len(sample_times)} ...")
         
         # Sampling analysis
         data_points = []
@@ -119,10 +122,10 @@ class FPSAnalyzer:
                 # progress
                 if (i + 1) % 5 == 0 or i == len(sample_times) - 1:
                     progress = (i + 1) / len(sample_times) * 100
-                    print(f"FPS analysis progress: {progress:.1f}%")
+                    self._logger.debug(f"FPS analysis progress: {progress:.1f}%")
                     
             except Exception as e:
-                print(f"Warning: FPS sampling failed at {timestamp:.1f}s: {e}")
+                self._logger.warning(f"FPS sampling failed at {timestamp:.1f}s: {e}")
                 # fallback to declared fps
                 fallback_fps_data = FPSDataPoint(
                     timestamp=timestamp,
@@ -133,8 +136,7 @@ class FPSAnalyzer:
                 data_points.append(fallback_fps_data)
                 total_frames += fallback_fps_data.frame_count
         
-        if not data_points:
-            raise ValueError("Unable to get valid FPS data")
+        ensure_non_empty_sequence("fps data points", data_points)
         
         # Stats
         fps_values = [dp.fps for dp in data_points]
@@ -206,7 +208,7 @@ class FPSAnalyzer:
             )
             
         except Exception as e:
-            print(f"Warning: real FPS analysis failed at {timestamp:.1f}s: {e}")
+            self._logger.warning(f"Real FPS analysis failed at {timestamp:.1f}s: {e}")
             # Fallback in exception
             return self._fallback_fps_data_point(timestamp, expected_fps, window_size)
     
@@ -304,7 +306,7 @@ class FPSAnalyzer:
             
         except (subprocess.TimeoutExpired, subprocess.SubprocessError, Exception) as e:
             # If ffprobe fails, return empty list
-            print(f"Failed to get frame timestamps: {e}")
+            self._logger.warning(f"Failed to get frame timestamps: {e}")
             return []
     
     def _detect_dropped_frames_in_window(self, frame_times: List[float], expected_fps: float, 
@@ -494,7 +496,7 @@ class FPSAnalyzer:
         with open(output_path, 'w', encoding='utf-8') as f:
             json.dump(data, f, indent=2, ensure_ascii=False)
         
-        print(f"FPS analysis exported to: {output_path}")
+        self._logger.info(f"FPS analysis exported to: {output_path}")
     
     def export_to_csv(self, analysis: FPSAnalysis, output_path: str):
         """Export to CSV"""
@@ -507,7 +509,7 @@ class FPSAnalyzer:
             for dp in analysis.data_points:
                 writer.writerow([dp.timestamp, dp.fps, dp.frame_count, dp.dropped_frames])
         
-        print(f"Data exported to: {output_path}")
+        self._logger.info(f"Data exported to: {output_path}")
 
 
 def analyze_multiple_fps(video_files: List[str], sample_interval: float = 10.0) -> List[FPSAnalysis]:
@@ -516,6 +518,7 @@ def analyze_multiple_fps(video_files: List[str], sample_interval: float = 10.0) 
     
     processor = FileProcessor()
     analyzer = FPSAnalyzer(sample_interval)
+    _logger = get_logger(__name__)
     
     results = []
     for video_file in video_files:
@@ -523,9 +526,9 @@ def analyze_multiple_fps(video_files: List[str], sample_interval: float = 10.0) 
             processed_file = processor.process_input(video_file)
             result = analyzer.analyze(processed_file)
             results.append(result)
-            print(f"✓ Completed FPS analysis: {video_file}")
+            _logger.info(f"Completed FPS analysis: {video_file}")
             
         except Exception as e:
-            print(f"✗ FPS analysis failed {video_file}: {e}")
+            _logger.error(f"FPS analysis failed {video_file}: {e}")
     
     return results
