@@ -14,6 +14,7 @@ from rich.table import Table
 from .core import FileProcessor, safe_process_file
 from .core.video_bitrate_analyzer import VideoBitrateAnalyzer
 from .core.audio_bitrate_analyzer import AudioBitrateAnalyzer
+from .core.fps_analyzer import FPSAnalyzer
 
 app = typer.Typer(help="视频分析工具 - 分析视频文件的码率、FPS等关键指标")
 console = Console()
@@ -403,6 +404,163 @@ def batch_audio(
         
     except Exception as e:
         console.print(f"[red]✗ 音频批量分析失败: {e}[/red]")
+        raise typer.Exit(1)
+
+
+@app.command()
+def fps(
+    file_path: str = typer.Argument(..., help="视频文件路径"),
+    interval: float = typer.Option(10.0, "--interval", "-i", help="采样间隔(秒)"),
+    export_json: Optional[str] = typer.Option(None, "--json", help="导出JSON文件路径"),
+    export_csv: Optional[str] = typer.Option(None, "--csv", help="导出CSV文件路径"),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="显示详细信息")
+):
+    """
+    分析视频FPS和掉帧情况
+    """
+    console.print(f"[blue]正在分析FPS和掉帧情况:[/blue] {file_path}")
+    
+    try:
+        # 处理视频文件
+        processed_file = safe_process_file(file_path)
+        if processed_file is None:
+            console.print("[red]文件处理失败[/red]")
+            raise typer.Exit(1)
+        
+        # 创建分析器并执行分析
+        analyzer = FPSAnalyzer(sample_interval=interval)
+        analysis = analyzer.analyze(processed_file)
+        
+        # 显示分析结果
+        table = Table(title="FPS分析结果")
+        table.add_column("统计项", style="cyan", no_wrap=True)
+        table.add_column("值", style="magenta")
+        
+        table.add_row("文件路径", analysis.file_path)
+        table.add_row("视频时长", f"{analysis.duration:.1f} 秒 ({analysis.duration/60:.1f} 分钟)")
+        table.add_row("采样间隔", f"{analysis.sample_interval:.1f} 秒")
+        table.add_row("采样点数", str(len(analysis.data_points)))
+        table.add_row("", "")  # 空行分隔
+        
+        # FPS统计
+        table.add_row("[bold]FPS统计[/bold]", "")
+        table.add_row("声明帧率", f"{analysis.declared_fps:.2f} fps")
+        table.add_row("实际平均帧率", f"{analysis.actual_average_fps:.2f} fps")
+        table.add_row("最大瞬时帧率", f"{analysis.max_fps:.2f} fps")
+        table.add_row("最小瞬时帧率", f"{analysis.min_fps:.2f} fps")
+        table.add_row("帧率稳定性", f"{analysis.fps_stability:.1%}")
+        table.add_row("", "")  # 空行分隔
+        
+        # 掉帧统计
+        table.add_row("[bold]掉帧统计[/bold]", "")
+        table.add_row("总帧数", str(analysis.total_frames))
+        table.add_row("掉帧数", str(analysis.total_dropped_frames))
+        table.add_row("掉帧率", f"{analysis.drop_rate:.2%}")
+        table.add_row("性能等级", analysis.performance_grade)
+        
+        console.print(table)
+        
+        # 显示质量评估
+        if verbose:
+            quality = analyzer.analyze_fps_quality(analysis)
+            console.print("\n[bold]FPS质量评估:[/bold]")
+            console.print(f"性能等级: {quality['performance_grade']}")
+            console.print(f"FPS一致性: {quality['fps_consistency']}")
+            console.print(f"FPS准确性: {quality['fps_accuracy']}")
+            console.print(f"掉帧率: {quality['drop_rate']}")
+            
+            if quality['issues']:
+                console.print("\n[yellow]发现的问题:[/yellow]")
+                for issue in quality['issues']:
+                    console.print(f"• {issue}")
+            
+            if quality['recommendations']:
+                console.print("\n[green]改进建议:[/green]")
+                for rec in quality['recommendations']:
+                    console.print(f"• {rec}")
+            
+            # 掉帧严重程度分析
+            drop_analysis = analyzer.analyze_drop_severity(analysis)
+            if drop_analysis['worst_segments']:
+                console.print(f"\n[red]最严重掉帧时间段 (严重程度: {drop_analysis['severity']}):[/red]")
+                for timestamp, drops in drop_analysis['worst_segments'][:3]:
+                    console.print(f"• {timestamp:.1f}s: {drops}帧")
+        
+        # 导出数据
+        if export_json:
+            analyzer.export_analysis_data(analysis, export_json)
+        
+        if export_csv:
+            analyzer.export_to_csv(analysis, export_csv)
+        
+        if verbose:
+            console.print("\n[green]✓ FPS分析完成[/green]")
+            console.print(f"数据点范围: {analysis.data_points[0].timestamp:.1f}s - {analysis.data_points[-1].timestamp:.1f}s")
+            
+    except Exception as e:
+        console.print(f"[red]✗ FPS分析失败: {e}[/red]")
+        if verbose:
+            import traceback
+            console.print(traceback.format_exc())
+        raise typer.Exit(1)
+
+
+@app.command()
+def batch_fps(
+    files: List[str] = typer.Argument(..., help="要分析的视频文件列表"),
+    interval: float = typer.Option(10.0, "--interval", "-i", help="采样间隔(秒)"),
+    output_dir: str = typer.Option("./output", "--output", "-o", help="输出目录")
+):
+    """
+    批量分析多个视频文件的FPS和掉帧情况
+    """
+    console.print(f"[blue]开始批量FPS分析 {len(files)} 个视频文件[/blue]")
+    
+    import os
+    from .core.fps_analyzer import analyze_multiple_fps
+    
+    # 确保输出目录存在
+    os.makedirs(output_dir, exist_ok=True)
+    
+    try:
+        results = analyze_multiple_fps(files, interval)
+        
+        # 创建汇总表格
+        summary_table = Table(title="FPS批量分析结果汇总")
+        summary_table.add_column("文件名", style="cyan")
+        summary_table.add_column("时长(分钟)", style="blue")
+        summary_table.add_column("声明FPS", style="green")
+        summary_table.add_column("实际FPS", style="yellow")
+        summary_table.add_column("掉帧率", style="red")
+        summary_table.add_column("等级", style="magenta")
+        
+        analyzer = FPSAnalyzer()
+        for result in results:
+            filename = os.path.basename(result.file_path)
+            duration_min = result.duration / 60
+            
+            summary_table.add_row(
+                filename, 
+                f"{duration_min:.1f}",
+                f"{result.declared_fps:.1f}",
+                f"{result.actual_average_fps:.1f}",
+                f"{result.drop_rate:.1%}",
+                result.performance_grade
+            )
+            
+            # 导出每个文件的分析结果
+            base_name = os.path.splitext(filename)[0]
+            json_path = os.path.join(output_dir, f"{base_name}_fps.json")
+            csv_path = os.path.join(output_dir, f"{base_name}_fps.csv")
+            
+            analyzer.export_analysis_data(result, json_path)
+            analyzer.export_to_csv(result, csv_path)
+        
+        console.print(summary_table)
+        console.print(f"\n[green]✓ FPS批量分析完成，结果已保存到 {output_dir}[/green]")
+        
+    except Exception as e:
+        console.print(f"[red]✗ FPS批量分析失败: {e}[/red]")
         raise typer.Exit(1)
 
 
