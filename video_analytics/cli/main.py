@@ -19,7 +19,10 @@ from .commands import (
     fps_command,
     batch_fps_command,
     chart_command,
-    batch_chart_command
+    batch_chart_command,
+    config_show_command,
+    config_set_command,
+    config_reset_command
 )
 
 app = typer.Typer(
@@ -31,6 +34,7 @@ app = typer.Typer(
 # Global console
 console = Console()
 
+# Core analysis commands
 app.command("info", help="Show basic video file information")(info_command)
 app.command("validate", help="Validate that a video file can be processed")(validate_command)
 app.command("check", help="Check system dependencies")(check_command)
@@ -42,6 +46,13 @@ app.command("fps", help="Analyze FPS and dropped frames")(fps_command)
 app.command("batch_fps", help="Analyze FPS for multiple videos")(batch_fps_command)
 app.command("chart", help="Generate analysis charts")(chart_command)
 app.command("batch_chart", help="Generate charts for multiple videos")(batch_chart_command)
+
+# Configuration management commands
+config_app = typer.Typer(help="Configuration management")
+config_app.command("show", help="Show current configuration")(config_show_command)
+config_app.command("set", help="Set a configuration value")(config_set_command)
+config_app.command("reset", help="Reset configuration to defaults")(config_reset_command)
+app.add_typer(config_app, name="config")
 
 
 def main():

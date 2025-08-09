@@ -16,6 +16,7 @@ from ..core.video_analyzer import VideoBitrateAnalyzer
 from ..core.audio_analyzer import AudioBitrateAnalyzer
 from ..core.fps_analyzer import FPSAnalyzer
 from ..visualization import ChartGenerator, ChartConfig, ChartStyles
+from ..utils import ConfigManager, AnalysisConfig, get_merged_config
 
 console = Console()
 
@@ -142,15 +143,27 @@ def check_command():
 
 def bitrate_command(
     file_path: str = typer.Argument(..., help="Video file path"),
-    interval: float = typer.Option(10.0, "--interval", "-i", help="Sampling interval (seconds)"),
+    interval: Optional[float] = typer.Option(None, "--interval", "-i", help="Sampling interval (seconds)"),
     export_json: Optional[str] = typer.Option(None, "--json", help="Export JSON file path"),
     export_csv: Optional[str] = typer.Option(None, "--csv", help="Export CSV file path"),
-    verbose: bool = typer.Option(False, "--verbose", "-v", help="Show verbose output")
+    verbose: Optional[bool] = typer.Option(None, "--verbose", "-v", help="Show verbose output")
 ):
     """
     Analyze video bitrate over time.
+    Uses configuration file settings when CLI parameters are not provided.
     """
+    # Merge CLI args with config file
+    cli_args = {
+        'interval': interval,
+        'export_json': export_json is not None,
+        'export_csv': export_csv is not None,
+        'verbose': verbose
+    }
+    config = get_merged_config(cli_args)
+    
     console.print(f"[blue]Analyzing video bitrate:[/blue] {file_path}")
+    if config.verbose:
+        console.print(f"[dim]Using interval: {config.interval}s[/dim]")
     
     try:
         # Process video file
@@ -160,7 +173,7 @@ def bitrate_command(
             raise typer.Exit(1)
         
         # Create analyzer and run analysis
-        analyzer = VideoBitrateAnalyzer(sample_interval=interval)
+        analyzer = VideoBitrateAnalyzer(sample_interval=config.interval)
         analysis = analyzer.analyze(processed_file)
         
         # Show analysis results
@@ -185,13 +198,17 @@ def bitrate_command(
         console.print(table)
         
         # Export data
-        if export_json:
-            analyzer.export_analysis_data(analysis, export_json)
+        if export_json or config.export_json:
+            json_path = export_json or f"{os.path.splitext(file_path)[0]}_bitrate.json"
+            analyzer.export_analysis_data(analysis, json_path)
+            console.print(f"[green]✓ JSON exported: {json_path}[/green]")
         
-        if export_csv:
-            analyzer.export_to_csv(analysis, export_csv)
+        if export_csv or config.export_csv:
+            csv_path = export_csv or f"{os.path.splitext(file_path)[0]}_bitrate.csv"
+            analyzer.export_to_csv(analysis, csv_path)
+            console.print(f"[green]✓ CSV exported: {csv_path}[/green]")
         
-        if verbose:
+        if config.verbose:
             console.print("\n[green]✓ Bitrate analysis complete[/green]")
             console.print(f"Data range: {analysis.data_points[0].timestamp:.1f}s - {analysis.data_points[-1].timestamp:.1f}s")
             
@@ -784,3 +801,89 @@ def batch_chart_command(
     except Exception as e:
         console.print(f"[red]✗ Batch chart generation failed: {e}[/red]")
         raise typer.Exit(1)
+
+
+# ================================================================================
+# Configuration Management Commands
+# ================================================================================
+
+def config_show_command():
+    """Show current configuration settings."""
+    try:
+        config_manager = ConfigManager()
+        config = config_manager.show_config()
+        
+        # Display config table
+        table = Table(title="Current Configuration")
+        table.add_column("Setting", style="cyan", no_wrap=True)
+        table.add_column("Value", style="magenta")
+        
+        for key, value in config.items():
+            table.add_row(key, str(value))
+        
+        console.print(table)
+        console.print(f"\nConfig file: {config_manager.get_config_path()}")
+        
+    except Exception as e:
+        console.print(f"[red]✗ Failed to show config: {e}[/red]")
+        raise typer.Exit(1)
+
+
+def config_set_command(
+    key: str = typer.Argument(..., help="Configuration key to set"),
+    value: str = typer.Argument(..., help="Configuration value to set")
+):
+    """Set a configuration value."""
+    try:
+        config_manager = ConfigManager()
+        
+        # Convert value to appropriate type
+        converted_value = _convert_config_value(key, value)
+        
+        # Update config
+        success = config_manager.update_config({key: converted_value})
+        
+        if success:
+            console.print(f"[green]✓ Set {key} = {converted_value}[/green]")
+        else:
+            console.print(f"[red]✗ Failed to set {key}[/red]")
+            raise typer.Exit(1)
+            
+    except Exception as e:
+        console.print(f"[red]✗ Failed to set config: {e}[/red]")
+        raise typer.Exit(1)
+
+
+def config_reset_command():
+    """Reset configuration to defaults."""
+    try:
+        config_manager = ConfigManager()
+        success = config_manager.reset_config()
+        
+        if success:
+            console.print("[green]✓ Configuration reset to defaults[/green]")
+        else:
+            console.print("[red]✗ Failed to reset configuration[/red]")
+            raise typer.Exit(1)
+            
+    except Exception as e:
+        console.print(f"[red]✗ Failed to reset config: {e}[/red]")
+        raise typer.Exit(1)
+
+
+def _convert_config_value(key: str, value: str):
+    """Convert string value to appropriate type based on key."""
+    # Boolean fields
+    if key in ['verbose', 'export_json', 'export_csv']:
+        return value.lower() in ['true', '1', 'yes', 'on']
+    
+    # Float fields
+    if key in ['interval']:
+        return float(value)
+    
+    # Integer fields
+    if key in ['ffmpeg_timeout']:
+        return int(value)
+    
+    # String fields (default)
+    return value
