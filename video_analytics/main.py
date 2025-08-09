@@ -15,6 +15,7 @@ from .core import FileProcessor, safe_process_file
 from .core.video_bitrate_analyzer import VideoBitrateAnalyzer
 from .core.audio_bitrate_analyzer import AudioBitrateAnalyzer
 from .core.fps_analyzer import FPSAnalyzer
+from .visualization import ChartGenerator, ChartConfig, ChartStyles
 
 app = typer.Typer(help="视频分析工具 - 分析视频文件的码率、FPS等关键指标")
 console = Console()
@@ -561,6 +562,239 @@ def batch_fps(
         
     except Exception as e:
         console.print(f"[red]✗ FPS批量分析失败: {e}[/red]")
+        raise typer.Exit(1)
+
+
+@app.command()
+def chart(
+    file_path: str = typer.Argument(..., help="视频文件路径"),
+    output_dir: str = typer.Option("./charts", "--output", "-o", help="图表输出目录"),
+    chart_type: str = typer.Option("combined", "--type", "-t", help="图表类型: video, audio, fps, combined, summary, all"),
+    config_type: str = typer.Option("default", "--config", "-c", help="图表配置: default, high_res, compact"),
+    video_interval: float = typer.Option(30.0, "--video-interval", help="视频码率采样间隔(秒)"),
+    audio_interval: float = typer.Option(15.0, "--audio-interval", help="音频码率采样间隔(秒)"),
+    fps_interval: float = typer.Option(10.0, "--fps-interval", help="FPS采样间隔(秒)")
+):
+    """
+    生成视频分析图表
+    """
+    console.print(f"[blue]正在为视频生成图表:[/blue] {file_path}")
+    console.print(f"图表类型: {chart_type}, 配置: {config_type}")
+    
+    try:
+        # 处理视频文件
+        processed_file = safe_process_file(file_path)
+        if processed_file is None:
+            console.print("[red]文件处理失败[/red]")
+            raise typer.Exit(1)
+        
+        # 根据图表类型决定需要进行哪些分析
+        need_video = chart_type in ['video', 'combined', 'summary', 'all']
+        need_audio = chart_type in ['audio', 'combined', 'summary', 'all'] 
+        need_fps = chart_type in ['fps', 'combined', 'summary', 'all']
+        
+        # 执行必要的分析
+        video_analysis = None
+        audio_analysis = None
+        fps_analysis = None
+        
+        if need_video:
+            console.print("[yellow]正在分析视频码率...[/yellow]")
+            video_analyzer = VideoBitrateAnalyzer(sample_interval=video_interval)
+            video_analysis = video_analyzer.analyze(processed_file)
+        
+        if need_audio:
+            console.print("[yellow]正在分析音频码率...[/yellow]")
+            audio_analyzer = AudioBitrateAnalyzer(sample_interval=audio_interval)
+            audio_analysis = audio_analyzer.analyze(processed_file)
+        
+        if need_fps:
+            console.print("[yellow]正在分析FPS...[/yellow]")
+            fps_analyzer = FPSAnalyzer(sample_interval=fps_interval)
+            fps_analysis = fps_analyzer.analyze(processed_file)
+        
+        # 创建图表生成器
+        chart_generator = ChartGenerator()
+        
+        # 获取配置
+        if config_type == "high_res":
+            config = ChartStyles.get_high_res_config()
+        elif config_type == "compact":
+            config = ChartStyles.get_compact_config()
+        else:
+            config = ChartStyles.get_default_config()
+        
+        config.output_dir = output_dir
+        
+        # 生成图表
+        results = {}
+        
+        if chart_type == "video" and video_analysis:
+            config.title = f"Video Bitrate Analysis - {os.path.basename(file_path)}"
+            chart_path = chart_generator.generate_video_bitrate_chart(video_analysis, config)
+            results['video'] = chart_path
+            console.print(f"✓ Video bitrate chart generated: {chart_path}")
+            
+        elif chart_type == "audio" and audio_analysis:
+            config.title = f"Audio Bitrate Analysis - {os.path.basename(file_path)}"
+            chart_path = chart_generator.generate_audio_bitrate_chart(audio_analysis, config)
+            results['audio'] = chart_path
+            console.print(f"✓ Audio bitrate chart generated: {chart_path}")
+            
+        elif chart_type == "fps" and fps_analysis:
+            config.title = f"FPS Analysis - {os.path.basename(file_path)}"
+            chart_path = chart_generator.generate_fps_chart(fps_analysis, config)
+            results['fps'] = chart_path
+            console.print(f"✓ FPS chart generated: {chart_path}")
+            
+        elif chart_type == "combined" and all([video_analysis, audio_analysis, fps_analysis]):
+            config.title = f"Combined Analysis - {os.path.basename(file_path)}"
+            chart_path = chart_generator.generate_combined_chart(
+                video_analysis, audio_analysis, fps_analysis, config
+            )
+            results['combined'] = chart_path
+            console.print(f"✓ Combined analysis chart generated: {chart_path}")
+            
+        elif chart_type == "summary" and all([video_analysis, audio_analysis, fps_analysis]):
+            config.title = f"Analysis Summary - {os.path.basename(file_path)}"
+            chart_path = chart_generator.generate_summary_chart(
+                video_analysis, audio_analysis, fps_analysis, config
+            )
+            results['summary'] = chart_path
+            console.print(f"✓ Summary chart generated: {chart_path}")
+            
+        elif chart_type == "all" and all([video_analysis, audio_analysis, fps_analysis]):
+            results = chart_generator.generate_full_report(
+                video_analysis, audio_analysis, fps_analysis, output_dir
+            )
+            console.print(f"✓ Full report generated with {len(results)} charts")
+        
+        else:
+            console.print(f"[red]无法生成图表: 缺少必要的分析数据或不支持的图表类型[/red]")
+            raise typer.Exit(1)
+        
+        # 显示结果汇总
+        if results:
+            table = Table(title="生成的图表文件")
+            table.add_column("图表类型", style="cyan")
+            table.add_column("文件路径", style="green")
+            
+            for chart_name, chart_path in results.items():
+                table.add_row(chart_name, chart_path)
+            
+            console.print(table)
+            console.print(f"\n[green]✓ 图表生成完成，保存到: {output_dir}[/green]")
+        
+    except Exception as e:
+        console.print(f"[red]✗ 图表生成失败: {e}[/red]")
+        import traceback
+        console.print(f"[dim]{traceback.format_exc()}[/dim]")
+        raise typer.Exit(1)
+
+
+@app.command() 
+def batch_chart(
+    files: List[str] = typer.Argument(..., help="要分析的视频文件列表"),
+    output_dir: str = typer.Option("./batch_charts", "--output", "-o", help="图表输出目录"),
+    chart_type: str = typer.Option("combined", "--type", "-t", help="图表类型: combined, summary, all"),
+    config_type: str = typer.Option("default", "--config", "-c", help="图表配置: default, high_res, compact")
+):
+    """
+    批量生成多个视频文件的分析图表
+    """
+    console.print(f"[blue]开始批量生成 {len(files)} 个文件的图表[/blue]")
+    console.print(f"图表类型: {chart_type}, 配置: {config_type}")
+    
+    import os
+    
+    # 确保输出目录存在
+    os.makedirs(output_dir, exist_ok=True)
+    
+    # 获取配置
+    if config_type == "high_res":
+        base_config = ChartStyles.get_high_res_config()
+    elif config_type == "compact":
+        base_config = ChartStyles.get_compact_config()
+    else:
+        base_config = ChartStyles.get_default_config()
+    
+    chart_generator = ChartGenerator()
+    success_count = 0
+    total_charts = 0
+    
+    try:
+        for i, file_path in enumerate(files, 1):
+            console.print(f"\n[blue]处理文件 {i}/{len(files)}:[/blue] {os.path.basename(file_path)}")
+            
+            try:
+                # 处理文件
+                processed_file = safe_process_file(file_path)
+                if processed_file is None:
+                    console.print(f"[red]✗ 文件处理失败: {file_path}[/red]")
+                    continue
+                
+                # 执行三种分析
+                video_analyzer = VideoBitrateAnalyzer()
+                audio_analyzer = AudioBitrateAnalyzer()
+                fps_analyzer = FPSAnalyzer()
+                
+                video_analysis = video_analyzer.analyze(processed_file)
+                audio_analysis = audio_analyzer.analyze(processed_file)
+                fps_analysis = fps_analyzer.analyze(processed_file)
+                
+                # 为每个文件创建子目录
+                file_basename = os.path.splitext(os.path.basename(file_path))[0]
+                file_output_dir = os.path.join(output_dir, file_basename)
+                os.makedirs(file_output_dir, exist_ok=True)
+                
+                config = ChartConfig(
+                    width=base_config.width,
+                    height=base_config.height,
+                    dpi=base_config.dpi,
+                    line_width=base_config.line_width,
+                    grid_alpha=base_config.grid_alpha,
+                    font_size=base_config.font_size,
+                    output_dir=file_output_dir
+                )
+                
+                # 生成图表
+                if chart_type == "combined":
+                    config.title = f"Combined Analysis - {file_basename}"
+                    chart_path = chart_generator.generate_combined_chart(
+                        video_analysis, audio_analysis, fps_analysis, config
+                    )
+                    console.print(f"  ✓ Combined chart: {chart_path}")
+                    total_charts += 1
+                    
+                elif chart_type == "summary":
+                    config.title = f"Analysis Summary - {file_basename}"
+                    chart_path = chart_generator.generate_summary_chart(
+                        video_analysis, audio_analysis, fps_analysis, config
+                    )
+                    console.print(f"  ✓ Summary chart: {chart_path}")
+                    total_charts += 1
+                    
+                elif chart_type == "all":
+                    results = chart_generator.generate_full_report(
+                        video_analysis, audio_analysis, fps_analysis, file_output_dir
+                    )
+                    console.print(f"  ✓ Full report: {len(results)} charts")
+                    total_charts += len(results)
+                
+                success_count += 1
+                
+            except Exception as e:
+                console.print(f"[red]✗ 处理文件失败 {file_path}: {e}[/red]")
+                continue
+        
+        # 显示最终结果
+        console.print(f"\n[green]✓ 批量图表生成完成[/green]")
+        console.print(f"成功处理: {success_count}/{len(files)} 个文件")
+        console.print(f"生成图表: {total_charts} 个")
+        console.print(f"输出目录: {output_dir}")
+        
+    except Exception as e:
+        console.print(f"[red]✗ 批量图表生成失败: {e}[/red]")
         raise typer.Exit(1)
 
 
