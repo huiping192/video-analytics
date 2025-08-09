@@ -4,9 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is a **fully implemented** Python-based command-line video analysis tool. 
+This is a **fully implemented** Python-based command-line video analysis tool with comprehensive CLI architecture.
 
-**CURRENT STATUS: COMPLETE IMPLEMENTATION** - The project includes comprehensive video analysis capabilities with CLI interface, core analysis engines, and visualization components.
+**CURRENT STATUS: COMPLETE IMPLEMENTATION** - The project includes comprehensive video analysis capabilities with rich CLI interface, core analysis engines, visualization components, and configuration management.
 
 **Implemented functionality:**
 - Video bitrate analysis and visualization with configurable sampling intervals
@@ -17,44 +17,21 @@ This is a **fully implemented** Python-based command-line video analysis tool.
 - Batch processing capabilities for multiple files
 - JSON/CSV data export functionality
 - FFmpeg dependency checking and validation
+- User configuration file management system
+- CLI-based configuration commands
 
-## Current Architecture
+## CLI Architecture
 
-**Project structure (fully implemented):**
+**Entry Points:**
+- Primary: `python -m video_analytics` → `video_analytics/__main__.py` → `video_analytics/cli/main.py`
+- Legacy: `video_analytics/main.py` (backwards compatibility)
+- Console script: `video-analytics` command (from setup.py)
 
+**CLI Structure:**
 ```
-video-analytics/
-├── CLAUDE.md                    # This file
-├── LICENSE                      # MIT license  
-├── setup.py                     # Package configuration
-├── requirements.txt             # Python dependencies
-├── main.py                      # Legacy entry point
-├── documents/                   # Chinese technical specifications
-│   ├── 00-project-overview.md
-│   ├── 01-file-processing.md  
-│   ├── 02-video-bitrate-analysis.md
-│   ├── 03-audio-bitrate-analysis.md
-│   ├── 04-fps-analysis.md
-│   └── 05-visualization.md
-└── video_analytics/             # Main package
-    ├── __init__.py
-    ├── __main__.py              # Python -m video_analytics entry
-    ├── main.py                  # CLI application entry point
-    ├── cli/                     # CLI components
-    │   └── __init__.py
-    ├── core/                    # Analysis engines
-    │   ├── __init__.py
-    │   ├── file_processor.py    # Video file processing and metadata
-    │   ├── simple_processor.py  # Lightweight processing without FFmpeg
-    │   ├── video_analyzer.py          # Video bitrate analysis
-    │   ├── audio_analyzer.py          # Audio bitrate analysis  
-    │   └── fps_analyzer.py      # FPS and frame drop analysis
-    ├── visualization/           # Chart generation
-    │   ├── __init__.py
-    │   └── chart_generator.py   # Matplotlib-based chart generation
-    ├── utils/                   # Utilities
-    │   └── __init__.py
-    └── tests/                   # Test directory (empty)
+video_analytics/cli/
+├── main.py       # Typer app setup and main entry point
+└── commands.py   # All command implementations (info, bitrate, audio, fps, etc.)
 ```
 
 ## Development Commands
@@ -97,6 +74,14 @@ python -m video_analytics chart <video_file> --type all     # Full report
 python -m video_analytics batch_chart <file1> <file2>       # Batch chart generation
 ```
 
+**Configuration Management:**
+```bash
+# Configuration commands (new feature)
+python -m video_analytics config show          # Show current configuration
+python -m video_analytics config set interval 5.0   # Set sampling interval
+python -m video_analytics config reset         # Reset to defaults
+```
+
 **Common Options:**
 ```bash
 --interval 10.0          # Sampling interval in seconds
@@ -119,29 +104,36 @@ python -m video_analytics batch_chart <file1> <file2>       # Batch chart genera
 
 ## Core Architecture Components
 
-### 1. File Processing (`video_analytics.core`)
+### 1. CLI Layer (`video_analytics.cli`)
+- **main.py**: Typer application setup with global error handling
+- **commands.py**: All command implementations with rich formatting
+- Command registration via Typer decorators
+- Nested configuration sub-commands under `config` group
+
+### 2. File Processing (`video_analytics.core`)
 - **FileProcessor**: Main video file processor using FFmpeg
 - **SimpleProcessor**: Lightweight processor that works without FFmpeg
 - **VideoMetadata**: Dataclass for video file metadata
 - **ProcessedFile**: Abstraction for processed video files
+- **safe_process_file()**: Error-safe file processing wrapper
 
-### 2. Analysis Engines (`video_analytics.core`)
+### 3. Analysis Engines (`video_analytics.core`)
 - **VideoBitrateAnalyzer**: Analyzes video bitrate variations over time
 - **AudioBitrateAnalyzer**: Analyzes audio bitrate and quality assessment
 - **FPSAnalyzer**: Analyzes frame rate consistency and drop detection
 - All analyzers support configurable sampling intervals and export to JSON/CSV
 
-### 3. Visualization (`video_analytics.visualization`)
+### 4. Configuration Management (`video_analytics.utils.config`)
+- **ConfigManager**: Persistent user configuration in `~/.video-analytics/config.json`
+- **AnalysisConfig**: Dataclass with default parameters
+- **get_merged_config()**: CLI arguments override config file settings
+- Support for common settings: interval, output_dir, chart_config, export formats
+
+### 5. Visualization (`video_analytics.visualization`)
 - **ChartGenerator**: Matplotlib-based chart generation
 - **ChartConfig**: Configuration for chart styling and output
 - **ChartStyles**: Predefined styles (default, high_res, compact)
 - Supports individual analysis charts, combined views, and summary reports
-
-### 4. CLI Interface (`video_analytics.main`)
-- Rich CLI with typer framework and colored output
-- Comprehensive command structure with help system
-- Progress indication and error handling
-- Batch processing capabilities for multiple files
 
 ## Key Implementation Notes
 
@@ -154,15 +146,14 @@ When working with this project:
 5. **Memory efficiency** - Streaming processing approach for large video files
 6. **Export capabilities** - All analysis results can be exported to JSON/CSV formats
 
-## Testing and Quality Assurance
+## Development Workflow
 
-Currently the project has:
-- **Basic structure**: Empty `tests/` directory ready for test implementation
+**No formal tests** - The project currently has no test files. Quality assurance relies on:
 - **Validation commands**: Built-in file validation and dependency checking
 - **Error handling**: Comprehensive exception handling throughout the codebase
 - **Simple mode**: Fallback processing mode when FFmpeg is not available
 
-**Recommended testing approach:**
+**Manual testing commands:**
 ```bash
 python -m video_analytics check                     # Verify dependencies
 python -m video_analytics validate <test_file>      # Test file processing
