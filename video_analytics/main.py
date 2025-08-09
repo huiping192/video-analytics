@@ -13,6 +13,7 @@ from rich.table import Table
 
 from .core import FileProcessor, safe_process_file
 from .core.video_bitrate_analyzer import VideoBitrateAnalyzer
+from .core.audio_bitrate_analyzer import AudioBitrateAnalyzer
 
 app = typer.Typer(help="视频分析工具 - 分析视频文件的码率、FPS等关键指标")
 console = Console()
@@ -259,6 +260,149 @@ def batch_bitrate(
         
     except Exception as e:
         console.print(f"[red]✗ 批量分析失败: {e}[/red]")
+        raise typer.Exit(1)
+
+
+@app.command()
+def audio(
+    file_path: str = typer.Argument(..., help="视频文件路径"),
+    interval: float = typer.Option(15.0, "--interval", "-i", help="采样间隔(秒)"),
+    export_json: Optional[str] = typer.Option(None, "--json", help="导出JSON文件路径"),
+    export_csv: Optional[str] = typer.Option(None, "--csv", help="导出CSV文件路径"),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="显示详细信息")
+):
+    """
+    分析音频码率变化情况
+    """
+    console.print(f"[blue]正在分析音频码率:[/blue] {file_path}")
+    
+    try:
+        # 处理视频文件
+        processed_file = safe_process_file(file_path)
+        if processed_file is None:
+            console.print("[red]文件处理失败[/red]")
+            raise typer.Exit(1)
+        
+        # 创建分析器并执行分析
+        analyzer = AudioBitrateAnalyzer(sample_interval=interval)
+        analysis = analyzer.analyze(processed_file)
+        
+        # 显示分析结果
+        table = Table(title="音频码率分析结果")
+        table.add_column("统计项", style="cyan", no_wrap=True)
+        table.add_column("值", style="magenta")
+        
+        table.add_row("文件路径", analysis.file_path)
+        table.add_row("音频时长", f"{analysis.duration:.1f} 秒 ({analysis.duration/60:.1f} 分钟)")
+        table.add_row("采样间隔", f"{analysis.sample_interval:.1f} 秒")
+        table.add_row("采样点数", str(len(analysis.data_points)))
+        table.add_row("", "")  # 空行分隔
+        
+        # 音频基本信息
+        table.add_row("[bold]音频信息[/bold]", "")
+        table.add_row("音频编码", analysis.codec)
+        table.add_row("声道配置", f"{analysis.channels}ch ({analyzer.get_channel_layout(analysis.channels)})")
+        table.add_row("采样率", f"{analysis.sample_rate} Hz")
+        table.add_row("", "")  # 空行分隔
+        
+        # 码率统计
+        table.add_row("[bold]码率统计[/bold]", "")
+        table.add_row("平均码率", f"{analysis.average_bitrate/1000:.1f} kbps")
+        table.add_row("最大码率", f"{analysis.max_bitrate/1000:.1f} kbps")
+        table.add_row("最小码率", f"{analysis.min_bitrate/1000:.1f} kbps")
+        table.add_row("码率稳定性", f"{analysis.bitrate_stability:.1%}")
+        table.add_row("音质等级", analysis.quality_level)
+        
+        console.print(table)
+        
+        # 显示质量评估
+        quality = analyzer.assess_audio_quality(analysis)
+        if verbose:
+            console.print("\n[bold]质量评估:[/bold]")
+            console.print(f"编码格式评价: {quality['codec_rating']}")
+            console.print(f"采样率评价: {quality['sample_rate_rating']}")
+            console.print(f"码率稳定性: {quality['stability']}")
+            
+            if quality['recommendations']:
+                console.print("\n[yellow]改进建议:[/yellow]")
+                for rec in quality['recommendations']:
+                    console.print(f"• {rec}")
+        
+        # 导出数据
+        if export_json:
+            analyzer.export_analysis_data(analysis, export_json)
+        
+        if export_csv:
+            analyzer.export_to_csv(analysis, export_csv)
+        
+        if verbose:
+            console.print("\n[green]✓ 音频分析完成[/green]")
+            console.print(f"数据点范围: {analysis.data_points[0].timestamp:.1f}s - {analysis.data_points[-1].timestamp:.1f}s")
+            
+    except Exception as e:
+        console.print(f"[red]✗ 分析失败: {e}[/red]")
+        if verbose:
+            import traceback
+            console.print(traceback.format_exc())
+        raise typer.Exit(1)
+
+
+@app.command()
+def batch_audio(
+    files: List[str] = typer.Argument(..., help="要分析的视频文件列表"),
+    interval: float = typer.Option(15.0, "--interval", "-i", help="采样间隔(秒)"),
+    output_dir: str = typer.Option("./output", "--output", "-o", help="输出目录")
+):
+    """
+    批量分析多个视频文件的音频码率
+    """
+    console.print(f"[blue]开始批量分析 {len(files)} 个文件的音频[/blue]")
+    
+    import os
+    from .core.audio_bitrate_analyzer import analyze_multiple_audio
+    
+    # 确保输出目录存在
+    os.makedirs(output_dir, exist_ok=True)
+    
+    try:
+        results = analyze_multiple_audio(files, interval)
+        
+        # 创建汇总表格
+        summary_table = Table(title="音频批量分析结果汇总")
+        summary_table.add_column("文件名", style="cyan")
+        summary_table.add_column("编码", style="blue")
+        summary_table.add_column("声道", style="green")
+        summary_table.add_column("采样率", style="yellow")
+        summary_table.add_column("平均码率(kbps)", style="magenta")
+        summary_table.add_column("音质", style="red")
+        
+        analyzer = AudioBitrateAnalyzer()
+        for result in results:
+            filename = os.path.basename(result.file_path)
+            avg_bitrate_kbps = result.average_bitrate / 1000
+            
+            summary_table.add_row(
+                filename, 
+                result.codec,
+                f"{result.channels}ch",
+                f"{result.sample_rate}Hz",
+                f"{avg_bitrate_kbps:.1f}",
+                result.quality_level
+            )
+            
+            # 导出每个文件的分析结果
+            base_name = os.path.splitext(filename)[0]
+            json_path = os.path.join(output_dir, f"{base_name}_audio.json")
+            csv_path = os.path.join(output_dir, f"{base_name}_audio.csv")
+            
+            analyzer.export_analysis_data(result, json_path)
+            analyzer.export_to_csv(result, csv_path)
+        
+        console.print(summary_table)
+        console.print(f"\n[green]✓ 音频批量分析完成，结果已保存到 {output_dir}[/green]")
+        
+    except Exception as e:
+        console.print(f"[red]✗ 音频批量分析失败: {e}[/red]")
         raise typer.Exit(1)
 
 

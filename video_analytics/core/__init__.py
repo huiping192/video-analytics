@@ -10,8 +10,10 @@ Core module - 核心功能模块
 
 from .file_processor import FileProcessor, ProcessedFile, VideoMetadata, safe_process_file
 from .video_bitrate_analyzer import VideoBitrateAnalyzer, VideoBitrateAnalysis, BitrateDataPoint, analyze_multiple_videos
+from .audio_bitrate_analyzer import AudioBitrateAnalyzer, AudioBitrateAnalysis, AudioBitrateDataPoint, analyze_multiple_audio
 
 __all__ = [
     'FileProcessor', 'ProcessedFile', 'VideoMetadata', 'safe_process_file',
-    'VideoBitrateAnalyzer', 'VideoBitrateAnalysis', 'BitrateDataPoint', 'analyze_multiple_videos'
+    'VideoBitrateAnalyzer', 'VideoBitrateAnalysis', 'BitrateDataPoint', 'analyze_multiple_videos',
+    'AudioBitrateAnalyzer', 'AudioBitrateAnalysis', 'AudioBitrateDataPoint', 'analyze_multiple_audio'
 ]
