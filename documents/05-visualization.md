@@ -2,15 +2,17 @@
 
 ## 模块概述
 
-图表可视化模块负责将视频分析结果转换为直观的PNG图表，提供简单有效的数据可视化功能。
+图表可视化模块负责将视频分析结果转换为直观的PNG图表，支持多种图表类型和样式配置，提供专业级的数据可视化功能。
 
 ## 核心功能
 
-- 视频码率线形图
-- 音频码率线形图  
-- FPS变化图
-- 三合一综合图表
-- PNG图片输出
+- 视频码率线形图（带平均线和趋势分析）
+- 音频码率线形图（带VBR检测）
+- FPS分析图（带掉帧标记和声明FPS线）
+- 综合分析图表（三子图组合）
+- 摘要报告图表（关键指标总览）
+- 多种输出格式（PNG/PDF）
+- 可配置样式（默认/高分辨率/紧凑）
 
 ## 技术实现
 
@@ -24,9 +26,10 @@ import matplotlib.dates as mdates
 import numpy as np
 import os
 from datetime import datetime
-from core.video_analyzer import VideoBitrateAnalysis
-from core.audio_analyzer import AudioBitrateAnalysis
-from core.fps_analyzer import FPSAnalysis
+from video_analytics.core.video_analyzer import VideoBitrateAnalysis
+from video_analytics.core.audio_analyzer import AudioBitrateAnalysis
+from video_analytics.core.fps_analyzer import FPSAnalysis
+from video_analytics.utils.logger import get_logger
 
 @dataclass
 class ChartConfig:
@@ -46,12 +49,9 @@ class ChartGenerator:
     """图表生成器"""
     
     def __init__(self):
-        # 设置中文字体支持
-        plt.rcParams['font.sans-serif'] = ['SimHei', 'Arial Unicode MS', 'DejaVu Sans']
-        plt.rcParams['axes.unicode_minus'] = False
-        
         # 设置默认样式
         plt.style.use('default')
+        self._logger = get_logger(__name__)
         
         # 默认颜色
         self.colors = {

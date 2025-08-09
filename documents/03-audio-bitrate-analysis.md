@@ -2,14 +2,17 @@
 
 ## 模块概述
 
-音频码率分析模块负责分析音频流的码率变化情况，提供音频质量评估和统计信息。相比视频码率，音频码率通常更加稳定。
+音频码率分析模块负责分析音频流的码率变化情况，通过基于ffprobe的音频包分析提供准确的码率数据和全面的质量评估。支持CBR/VBR检测和质量问题诊断。
 
 ## 核心功能
 
-- 音频码率时间序列分析
-- 标准模式采样（15秒间隔）
-- 基础音频信息提取
-- 音频质量简单评估
+- 基于ffprobe音频包的真实码率分析
+- 时间窗口音频码率计算（默认15秒间隔）
+- 完整的音频信息提取（编码器、声道、采样率）
+- CBR/VBR自动检测
+- 全面的音频质量评估和问题诊断
+- 质量改进建议生成
+- 数据导出（JSON/CSV格式）
 
 ## 技术实现
 
@@ -17,10 +20,12 @@
 
 ```python
 from dataclasses import dataclass
-from typing import List
+from typing import List, Optional
 import numpy as np
 import subprocess
-from core.file_processor import ProcessedFile
+from datetime import datetime
+from video_analytics.core.file_processor import ProcessedFile
+from video_analytics.utils.logger import get_logger
 
 @dataclass
 class AudioBitrateDataPoint:
@@ -61,37 +66,39 @@ class AudioBitrateAnalysis:
     
     @property
     def quality_level(self) -> str:
-        """简单的音质等级评估"""
+        """音质等级评估（英文标签）"""
         avg_kbps = self.average_bitrate / 1000
         
         if self.codec.lower() == 'aac':
             if avg_kbps >= 256:
-                return "优秀"
+                return "Excellent"
             elif avg_kbps >= 128:
-                return "良好"
+                return "Good"
             elif avg_kbps >= 96:
-                return "一般"
+                return "Fair"
             else:
-                return "较差"
+                return "Poor"
         
         elif self.codec.lower() == 'mp3':
             if avg_kbps >= 320:
-                return "优秀"
+                return "Excellent"
             elif avg_kbps >= 192:
-                return "良好"
+                return "Good"
             elif avg_kbps >= 128:
-                return "一般"
+                return "Fair"
             else:
-                return "较差"
+                return "Poor"
         
         else:
-            return "未知编码"
+            return "Unknown"
 
 class AudioBitrateAnalyzer:
     """音频码率分析器"""
     
     def __init__(self, sample_interval: float = 15.0):
-        self.sample_interval = sample_interval  # 音频采样间隔比视频长
+        self.sample_interval = sample_interval  # 音频采样间隔
+        self._bitrate_cache = {}  # 码率缓存
+        self._logger = get_logger(__name__)
     
     def analyze(self, processed_file: ProcessedFile) -> AudioBitrateAnalysis:
         """分析音频码率"""
@@ -100,13 +107,13 @@ class AudioBitrateAnalyzer:
         if not metadata.audio_codec:
             raise ValueError("文件不包含音频流")
         
-        print(f"开始分析音频码率 (采样间隔: {self.sample_interval}秒)")
+        self._logger.info(f"开始分析音频码率 (采样间隔: {self.sample_interval}秒)")
         
         # 生成采样时间点
         duration = metadata.duration
         sample_times = np.arange(0, duration, self.sample_interval)
         
-        print(f"共需分析 {len(sample_times)} 个采样点...")
+        self._logger.debug(f"共需分析 {len(sample_times)} 个采样点...")
         
         # 采样分析
         data_points = []
@@ -118,6 +125,33 @@ class AudioBitrateAnalyzer:
                 # 进度显示
                 if (i + 1) % 5 == 0 or i == len(sample_times) - 1:
                     progress = (i + 1) / len(sample_times) * 100
+                    self._logger.debug(f"音频分析进度: {progress:.1f}%")
+                    
+            except Exception as e:
+                self._logger.warning(f"音频采样失败于 {timestamp:.1f}s: {e}")
+                # 使用元数据码率作为备选值
+                fallback_bitrate = metadata.audio_bitrate or (metadata.bit_rate * 0.1) if metadata.bit_rate else 128000
+                data_points.append(AudioBitrateDataPoint(timestamp, fallback_bitrate))
+        
+        from ..utils.validators import ensure_non_empty_sequence
+        ensure_non_empty_sequence("audio bitrate data points", data_points)
+        
+        # 计算统计信息
+        bitrates = [dp.bitrate for dp in data_points]
+        
+        return AudioBitrateAnalysis(
+            file_path=processed_file.file_path,
+            duration=duration,
+            codec=metadata.audio_codec,
+            channels=metadata.channels or 2,
+            sample_rate=int(metadata.sample_rate) if metadata.sample_rate else 44100,
+            average_bitrate=float(np.mean(bitrates)),
+            max_bitrate=float(np.max(bitrates)),
+            min_bitrate=float(np.min(bitrates)),
+            bitrate_variance=float(np.var(bitrates)),
+            data_points=data_points,
+            sample_interval=self.sample_interval
+        )
                     print(f"音频分析进度: {progress:.1f}%")
                     
             except Exception as e:

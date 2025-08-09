@@ -2,14 +2,17 @@
 
 ## 模块概述
 
-FPS(Frames Per Second)分析模块负责分析视频的帧率变化和掉帧情况，通过标准模式采样检测视频播放质量问题。
+FPS分析模块负责分析视频的帧率变化情况，通过基于ffprobe的真实帧时间戳分析实现精确掉帧检测和帧率监测，支持VFR视频分析。
 
 ## 核心功能
 
-- 视频FPS时间序列分析
-- 标准模式采样（10秒间隔）
-- 基础掉帧检测
-- 帧率稳定性评估
+- 基于ffprobe帧时间戳的真实FPS分析
+- 精确掉帧检测算法（基于帧间隔分析）
+- VFR（可变帧率）视频检测和支持
+- 帧率稳定性和质量评估
+- 掉帧严重程度分析
+- 性能问题诊断和建议
+- 数据导出（JSON/CSV格式）
 
 ## 技术实现
 
@@ -17,10 +20,12 @@ FPS(Frames Per Second)分析模块负责分析视频的帧率变化和掉帧情�
 
 ```python
 from dataclasses import dataclass
-from typing import List
+from typing import List, Optional
 import numpy as np
 import subprocess
-from core.file_processor import ProcessedFile
+from datetime import datetime
+from video_analytics.core.file_processor import ProcessedFile
+from video_analytics.utils.logger import get_logger
 
 @dataclass
 class FPSDataPoint:

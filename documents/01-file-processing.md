@@ -2,14 +2,16 @@
 
 ## 模块概述
 
-文件处理模块负责视频文件的读取、验证和预处理，为后续的分析模块提供统一的文件接口。
+文件处理模块负责视频文件的读取、验证和预处理，为后续的分析模块提供统一的文件接口。支持双模式处理：完整FFmpeg模式和简化模式。
 
 ## 核心功能
 
 - 本地视频文件读取和验证
 - 文件格式检测和兼容性验证
-- 基本视频元数据提取
-- 统一的文件对象接口
+- 基本视频元数据提取(使用ffmpeg-python)
+- 简化模式处理(无FFmpeg依赖时的备用方案)
+- 统一的文件对象接口和错误处理
+- 输入验证和安全性检查
 
 ## 技术实现
 
@@ -187,29 +189,76 @@ class CorruptedFileError(FileProcessingError):
     pass
 ```
 
-### 错误处理示例
+### 双模式处理器架构
 
 ```python
+class FileProcessor:
+    """主文件处理器 - 使用FFmpeg"""
+    
+    def process_input(self, file_path: str) -> ProcessedFile:
+        """处理输入文件"""
+        from ..utils.validators import validate_file_path
+        
+        # 使用validators模块进行验证
+        validate_file_path(file_path)
+        
+        processed_file = ProcessedFile(file_path)
+        metadata = processed_file.load_metadata()
+        
+        # 验证元数据
+        from ..utils.validators import validate_metadata
+        validate_metadata(metadata)
+        
+        return processed_file
+
+class SimpleProcessor:
+    """简化处理器 - 不依赖FFmpeg"""
+    
+    def process_input(self, file_path: str) -> ProcessedFile:
+        """简化模式处理文件"""
+        validate_file_path(file_path)
+        
+        # 创建基础元数据对象
+        metadata = SimpleVideoMetadata(
+            file_path=file_path,
+            duration=0.0,  # 简化模式无法获取
+            file_size=os.path.getsize(file_path),
+            format_name=self._guess_format(file_path),
+            # 其他字段使用默认值
+        )
+        
+        processed_file = ProcessedFile(file_path)
+        processed_file.metadata = metadata
+        return processed_file
+```
+
+### 错误处理和日志
+
+```python
+from ..utils.logger import get_logger
+
 def safe_process_file(file_path: str) -> Optional[ProcessedFile]:
-    """安全的文件处理"""
+    """安全的文件处理 - 使用统一日志系统"""
+    logger = get_logger(__name__)
+    
     try:
         processor = FileProcessor()
         return processor.process_input(file_path)
         
     except FileNotFoundError:
-        print(f"错误: 文件不存在 - {file_path}")
+        logger.error(f"文件不存在: {file_path}")
         return None
         
     except PermissionError:
-        print(f"错误: 没有文件访问权限 - {file_path}")
+        logger.error(f"没有文件访问权限: {file_path}")
         return None
         
     except ValueError as e:
-        print(f"错误: 文件格式问题 - {e}")
+        logger.error(f"文件格式问题: {e}")
         return None
         
     except Exception as e:
-        print(f"未知错误: {e}")
+        logger.error(f"未知错误: {e}")
         return None
 ```
 
@@ -218,7 +267,11 @@ def safe_process_file(file_path: str) -> Optional[ProcessedFile]:
 ### 基本使用
 
 ```python
-from core.file_processor import FileProcessor
+from video_analytics.core.file_processor import FileProcessor
+from video_analytics.utils.logger import get_logger
+
+# 设置日志
+logger = get_logger(__name__)
 
 # 创建处理器
 processor = FileProcessor()
@@ -228,14 +281,31 @@ try:
     processed_file = processor.process_input("video.mp4")
     metadata = processed_file.load_metadata()
     
-    print(f"视频时长: {metadata.duration:.1f}秒")
-    print(f"分辨率: {metadata.width}x{metadata.height}")
-    print(f"帧率: {metadata.fps:.2f}fps")
-    print(f"视频编码: {metadata.video_codec}")
-    print(f"音频编码: {metadata.audio_codec}")
+    logger.info(f"视频时长: {metadata.duration:.1f}秒")
+    logger.info(f"分辨率: {metadata.width}x{metadata.height}")
+    logger.info(f"帧率: {metadata.fps:.2f}fps")
+    logger.info(f"视频编码: {metadata.video_codec}")
+    logger.info(f"音频编码: {metadata.audio_codec}")
     
 except Exception as e:
-    print(f"处理失败: {e}")
+    logger.error(f"处理失败: {e}")
+```
+
+### 简化模式使用
+
+```python
+from video_analytics.core.simple_processor import SimpleProcessor
+
+# 当FFmpeg不可用时使用简化处理器
+try:
+    simple_processor = SimpleProcessor()
+    processed_file = simple_processor.process_input("video.mp4")
+    
+    logger.info("使用简化模式处理文件")
+    # 注意：简化模式下某些元数据不可用
+    
+except Exception as e:
+    logger.error(f"简化模式处理失败: {e}")
 ```
 
 ### 批量文件处理
