@@ -13,8 +13,8 @@ import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 import numpy as np
 
-from ..core.video_bitrate_analyzer import VideoBitrateAnalysis
-from ..core.audio_bitrate_analyzer import AudioBitrateAnalysis
+from ..core.video_analyzer import VideoBitrateAnalysis
+from ..core.audio_analyzer import AudioBitrateAnalysis
 from ..core.fps_analyzer import FPSAnalysis
 
 

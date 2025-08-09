@@ -12,8 +12,8 @@ from rich.console import Console
 from rich.table import Table
 
 from ..core import FileProcessor, safe_process_file
-from ..core.video_bitrate_analyzer import VideoBitrateAnalyzer
-from ..core.audio_bitrate_analyzer import AudioBitrateAnalyzer
+from ..core.video_analyzer import VideoBitrateAnalyzer
+from ..core.audio_analyzer import AudioBitrateAnalyzer
 from ..core.fps_analyzer import FPSAnalyzer
 from ..visualization import ChartGenerator, ChartConfig, ChartStyles
 
@@ -214,7 +214,7 @@ def batch_bitrate_command(
     console.print(f"[blue]开始批量分析 {len(files)} 个视频文件[/blue]")
     
     import os
-    from ..core.video_bitrate_analyzer import analyze_multiple_videos
+    from ..core.video_analyzer import analyze_multiple_videos
     
     # 确保输出目录存在
     os.makedirs(output_dir, exist_ok=True)
@@ -353,7 +353,7 @@ def batch_audio_command(
     console.print(f"[blue]开始批量分析 {len(files)} 个文件的音频[/blue]")
     
     import os
-    from ..core.audio_bitrate_analyzer import analyze_multiple_audio
+    from ..core.audio_analyzer import analyze_multiple_audio
     
     # 确保输出目录存在
     os.makedirs(output_dir, exist_ok=True)
