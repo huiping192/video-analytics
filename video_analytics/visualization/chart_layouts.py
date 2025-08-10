@@ -64,7 +64,7 @@ class ChartLayoutManager:
         main_charts_gs = gridspec.GridSpecFromSubplotSpec(
             3, 1,  # 3 rows, 1 column
             main_gs[0, 0],  # In the first row of main grid
-            hspace=0.45,  # Increase spacing between subplots to avoid title overlap
+            hspace=0.5,  # Increase spacing between subplots to avoid title overlap
         )
         
         # Create 3 main chart subplots
@@ -75,25 +75,25 @@ class ChartLayoutManager:
         }
         
         # Configure main chart subplots
-        main_charts['video_bitrate'].set_title('Video Bitrate Changes', fontweight='bold')
-        main_charts['video_bitrate'].set_ylabel('Video Bitrate (Mbps)')
+        main_charts['video_bitrate'].set_title('Video Bitrate Changes', fontweight='bold', fontsize=12, pad=10)
+        main_charts['video_bitrate'].set_ylabel('Video Bitrate (Mbps)', fontsize=11)
         main_charts['video_bitrate'].grid(True, alpha=0.3)
         
-        main_charts['audio_bitrate'].set_title('Audio Bitrate Changes', fontweight='bold')
-        main_charts['audio_bitrate'].set_ylabel('Audio Bitrate (kbps)')
+        main_charts['audio_bitrate'].set_title('Audio Bitrate Changes', fontweight='bold', fontsize=12, pad=10)
+        main_charts['audio_bitrate'].set_ylabel('Audio Bitrate (kbps)', fontsize=11)
         main_charts['audio_bitrate'].grid(True, alpha=0.3)
         
-        main_charts['fps'].set_title('FPS Changes', fontweight='bold')
-        main_charts['fps'].set_ylabel('FPS')
-        main_charts['fps'].set_xlabel('Time (minutes)')
+        main_charts['fps'].set_title('FPS Changes', fontweight='bold', fontsize=12, pad=10)
+        main_charts['fps'].set_ylabel('FPS', fontsize=11)
+        main_charts['fps'].set_xlabel('Time (minutes)', fontsize=11)
         main_charts['fps'].grid(True, alpha=0.3)
         
         # Info panels area - nested GridSpec for 2x2 grid
         info_panels_gs = gridspec.GridSpecFromSubplotSpec(
             2, 2,  # 2 rows, 2 columns
             main_gs[1, 0],  # In the second row of main grid
-            wspace=0.15,  # Column spacing
-            hspace=0.2    # Row spacing
+            wspace=0.2,  # Column spacing
+            hspace=0.25    # Row spacing
         )
         
         # Create 4 info panel subplots
@@ -117,7 +117,7 @@ class ChartLayoutManager:
         
         # Add overall title
         if title:
-            self.fig.suptitle(title, fontsize=16, fontweight='bold', y=0.96)
+            self.fig.suptitle(title, fontsize=18, fontweight='bold', y=0.97)
         
         # Return layout info
         layout_info = {

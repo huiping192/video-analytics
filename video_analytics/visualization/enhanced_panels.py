@@ -37,13 +37,13 @@ class EnhancedPanelDrawer:
         
         # 颜色配置
         self.colors = {
-            'excellent': '#2ecc71',    # 绿色 - 优秀
-            'good': '#3498db',         # 蓝色 - 良好  
-            'fair': '#f39c12',         # 橙色 - 一般
-            'poor': '#e74c3c',         # 红色 - 较差
-            'background': '#f8f9fa',   # 背景色
-            'text': '#2c3e50',         # 文字色
-            'border': '#bdc3c7',       # 边框色
+            'excellent': '#27ae60',    # 更沉稳的绿色
+            'good': '#2980b9',         # 更沉稳的蓝色  
+            'fair': '#e67e22',         # 柔和橙色
+            'poor': '#c0392b',         # 柔和红色
+            'background': '#f3f6f9',   # 浅灰蓝背景
+            'text': '#2d3436',         # 深灰文字
+            'border': '#dfe6e9',       # 边框色
             'panel_bg': '#ffffff',     # 面板背景
         }
         
@@ -60,24 +60,24 @@ class EnhancedPanelDrawer:
         level = (info_level or 'standard').lower()
         if level == 'basic':
             self.font_sizes = {
-                'title': 11,
-                'subtitle': 9,
-                'content': 8,
-                'small': 7
+                'title': 12,
+                'subtitle': 10,
+                'content': 9,
+                'small': 8
             }
         elif level == 'detailed':
+            self.font_sizes = {
+                'title': 14,
+                'subtitle': 12,
+                'content': 11,
+                'small': 10
+            }
+        else:
             self.font_sizes = {
                 'title': 13,
                 'subtitle': 11,
                 'content': 10,
                 'small': 9
-            }
-        else:
-            self.font_sizes = {
-                'title': 12,
-                'subtitle': 10,
-                'content': 9,
-                'small': 8
             }
     
     def draw_all_panels(self, enhanced_info: EnhancedAnalysisInfo,
@@ -137,7 +137,7 @@ class EnhancedPanelDrawer:
             bg_rect = Rectangle((0.02, 0.02), 0.96, 0.96,
                               facecolor=self.colors['panel_bg'],
                               edgecolor=self.colors['border'],
-                              linewidth=1, alpha=0.9)
+                              linewidth=1, alpha=0.98)
             ax.add_patch(bg_rect)
             
             # 内容

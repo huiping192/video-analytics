@@ -20,13 +20,13 @@ class MainChartDrawer:
             'audio': '#ff7f0e',  
             'fps': '#2ca02c',
             'dropped': '#d62728',
-            'average': '#ff0000'
+            'average': '#888888'
         }
         
         # Chart styling
         self.line_width = 2.0
-        self.grid_alpha = 0.3
-        self.font_size = 11
+        self.grid_alpha = 0.25
+        self.font_size = 12
     
     def draw_combined_charts(self, main_charts: Dict[str, Any], 
                             video_analysis: VideoBitrateAnalysis,

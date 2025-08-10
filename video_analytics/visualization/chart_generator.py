@@ -61,7 +61,7 @@ class ChartGenerator:
             'audio': '#ff7f0e',  
             'fps': '#2ca02c',
             'dropped': '#d62728',
-            'average': '#ff0000'
+            'average': '#888888'
         }
 
     def generate_enhanced_chart(
