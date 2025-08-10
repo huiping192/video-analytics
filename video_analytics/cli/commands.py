@@ -633,6 +633,7 @@ def chart_command(
     video_interval: float = typer.Option(30.0, "--video-interval", help="Video sampling interval (seconds)"),
     audio_interval: float = typer.Option(15.0, "--audio-interval", help="Audio sampling interval (seconds)"),
     fps_interval: float = typer.Option(10.0, "--fps-interval", help="FPS sampling interval (seconds)"),
+    parallel: bool = typer.Option(True, "--parallel/--no-parallel", help="Use parallel analysis for better performance (default: enabled)"),
     force_download: bool = typer.Option(False, "--force-download", help="Force re-download even if cached"),
     max_workers: int = typer.Option(10, "--workers", help="Maximum download threads for HLS")
 ):
@@ -675,20 +676,58 @@ def chart_command(
         audio_analysis = None
         fps_analysis = None
         
-        if need_video:
-            console.print("[yellow]Analyzing video bitrate...[/yellow]")
-            video_analyzer = VideoBitrateAnalyzer(sample_interval=video_interval)
-            video_analysis = video_analyzer.analyze(processed_file)
-        
-        if need_audio:
-            console.print("[yellow]Analyzing audio bitrate...[/yellow]")
-            audio_analyzer = AudioBitrateAnalyzer(sample_interval=audio_interval)
-            audio_analysis = audio_analyzer.analyze(processed_file)
-        
-        if need_fps:
-            console.print("[yellow]Analyzing FPS...[/yellow]")
-            fps_analyzer = FPSAnalyzer(sample_interval=fps_interval)
-            fps_analysis = fps_analyzer.analyze(processed_file)
+        if parallel and (need_video or need_audio or need_fps):
+            # Use parallel analysis engine when parallel is enabled and at least one analysis is needed
+            import asyncio
+            from ..core.parallel_analyzer import ParallelAnalysisEngine, ParallelConfig
+            
+            analysis_types = []
+            if need_video: analysis_types.append("video")
+            if need_audio: analysis_types.append("audio")
+            if need_fps: analysis_types.append("fps")
+            
+            console.print(f"[yellow]Running parallel analysis ({', '.join(analysis_types)}) for chart generation...[/yellow]")
+            
+            # Create parallel config with custom intervals
+            config = ParallelConfig()
+            config.video_interval = video_interval
+            config.audio_interval = audio_interval
+            config.fps_interval = fps_interval
+            config.enable_video = need_video
+            config.enable_audio = need_audio
+            config.enable_fps = need_fps
+            
+            # Run parallel analysis
+            async def run_parallel_analysis():
+                engine = ParallelAnalysisEngine(config)
+                return await engine.analyze_all(processed_file)
+            
+            combined_result = asyncio.run(run_parallel_analysis())
+            
+            video_analysis = combined_result.video_analysis
+            audio_analysis = combined_result.audio_analysis
+            fps_analysis = combined_result.fps_analysis
+            
+            console.print(f"[green]Parallel analysis completed in {combined_result.execution_time:.1f}s (efficiency: {combined_result.parallel_efficiency:.1%})[/green]")
+            
+        else:
+            # Use sequential analysis (original approach)
+            console.print("[dim]Using sequential analysis...[/dim]")
+            
+            if need_video:
+                console.print("[yellow]Analyzing video bitrate...[/yellow]")
+                video_analyzer = VideoBitrateAnalyzer(sample_interval=video_interval)
+                video_analysis = video_analyzer.analyze(processed_file)
+            
+            if need_audio:
+                console.print("[yellow]Analyzing audio bitrate...[/yellow]")
+                audio_analyzer = AudioBitrateAnalyzer(sample_interval=audio_interval)
+                audio_analysis = audio_analyzer.analyze(processed_file)
+            
+            if need_fps:
+                console.print("[yellow]Analyzing FPS...[/yellow]")
+                fps_analyzer = FPSAnalyzer(sample_interval=fps_interval)
+                fps_analysis = fps_analyzer.analyze(processed_file)
         
         # Create chart generator
         chart_generator = ChartGenerator()
@@ -1193,3 +1232,541 @@ def cache_remove_command(
     except Exception as e:
         console.print(f"[red]✗ Error removing from cache: {e}[/red]")
         raise typer.Exit(1)
+
+
+def parallel_analysis_command(
+    input_path: str = typer.Argument(..., help="Video file path, HTTP URL, or HLS stream URL"),
+    output: Optional[str] = typer.Option(None, "--output", "-o", help="Output directory for results"),
+    json_output: Optional[str] = typer.Option(None, "--json", help="Export JSON data to file"),
+    csv_output: Optional[str] = typer.Option(None, "--csv", help="Export CSV data to file"),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Show verbose output"),
+    mode: str = typer.Option("default", "--mode", help="Analysis mode: fast, detailed, memory-optimized"),
+    enable_video: bool = typer.Option(True, "--video/--no-video", help="Enable/disable video analysis"),
+    enable_audio: bool = typer.Option(True, "--audio/--no-audio", help="Enable/disable audio analysis"),
+    enable_fps: bool = typer.Option(True, "--fps/--no-fps", help="Enable/disable FPS analysis"),
+    max_workers: int = typer.Option(3, "--max-workers", help="Maximum parallel workers"),
+    force_download: bool = typer.Option(False, "--force-download", help="Force re-download even if cached"),
+    workers: int = typer.Option(10, "--workers", help="Maximum download threads for HLS")
+):
+    """
+    Run comprehensive parallel analysis (video, audio, and FPS) for optimal performance.
+    """
+    import asyncio
+    from ..core.parallel_analyzer import (
+        ParallelAnalysisEngine, 
+        ParallelConfig, 
+        create_fast_config, 
+        create_detailed_config, 
+        create_memory_optimized_config
+    )
+    
+    console.print(f"[blue]Starting parallel analysis:[/blue] {input_path}")
+    
+    # Process input file
+    processed_file = safe_process_file(
+        input_path, 
+        force_download=force_download,
+        max_workers=workers
+    )
+    if processed_file is None:
+        console.print("[red]Input processing failed[/red]")
+        raise typer.Exit(1)
+    
+    # Get file metadata to optimize config
+    metadata = processed_file.load_metadata()
+    
+    # Create configuration based on mode
+    if mode == "fast":
+        config = create_fast_config(metadata.duration)
+        console.print(f"[yellow]Using fast mode for {metadata.duration/60:.1f} min video[/yellow]")
+    elif mode == "detailed":
+        config = create_detailed_config()
+        console.print("[yellow]Using detailed mode (higher precision)[/yellow]")
+    elif mode == "memory-optimized":
+        config = create_memory_optimized_config()
+        console.print("[yellow]Using memory-optimized mode[/yellow]")
+    else:
+        config = ParallelConfig()
+    
+    # Override config with command line options
+    config.max_workers = max_workers
+    config.enable_video = enable_video
+    config.enable_audio = enable_audio
+    config.enable_fps = enable_fps
+    
+    # Validate analysis selection
+    enabled_count = sum([enable_video, enable_audio, enable_fps])
+    if enabled_count == 0:
+        console.print("[red]At least one analysis type must be enabled[/red]")
+        raise typer.Exit(1)
+    
+    enabled_types = []
+    if enable_video:
+        enabled_types.append("Video")
+    if enable_audio:
+        enabled_types.append("Audio") 
+    if enable_fps:
+        enabled_types.append("FPS")
+    
+    console.print(f"[green]Enabled analysis types:[/green] {', '.join(enabled_types)}")
+    console.print(f"[green]Max parallel workers:[/green] {max_workers}")
+    
+    # Run parallel analysis
+    async def run_analysis():
+        engine = ParallelAnalysisEngine(config)
+        return await engine.analyze_all(processed_file)
+    
+    try:
+        with console.status("[bold green]Running parallel analysis..."):
+            combined_result = asyncio.run(run_analysis())
+        
+    except Exception as e:
+        console.print(f"[red]Analysis failed: {e}[/red]")
+        raise typer.Exit(1)
+    
+    # Display results summary
+    console.print("\n[bold green]✓ Parallel Analysis Complete[/bold green]")
+    
+    # Performance summary table
+    perf_table = Table(title="Performance Summary")
+    perf_table.add_column("Metric", style="cyan", no_wrap=True)
+    perf_table.add_column("Value", style="magenta")
+    
+    perf_table.add_row("Execution Time", f"{combined_result.execution_time:.1f}s")
+    perf_table.add_row("Parallel Efficiency", f"{combined_result.parallel_efficiency:.1%}")
+    perf_table.add_row("Success Rate", f"{combined_result.success_rate:.1%}")
+    perf_table.add_row("Tasks Completed", f"{combined_result.tasks_completed}")
+    perf_table.add_row("Tasks Failed", f"{combined_result.tasks_failed}")
+    
+    console.print(perf_table)
+    
+    # Results summary
+    results_table = Table(title="Analysis Results")
+    results_table.add_column("Type", style="cyan", no_wrap=True)
+    results_table.add_column("Status", style="magenta")
+    results_table.add_column("Key Metrics", style="green")
+    
+    if config.enable_video:
+        if combined_result.has_video_analysis:
+            video = combined_result.video_analysis
+            metrics = f"Avg: {video.average_bitrate/1000000:.1f} Mbps, {video.encoding_type[:3]}"
+            results_table.add_row("Video Bitrate", "✓ Success", metrics)
+        else:
+            results_table.add_row("Video Bitrate", "✗ Failed", "N/A")
+    
+    if config.enable_audio:
+        if combined_result.has_audio_analysis:
+            audio = combined_result.audio_analysis
+            metrics = f"Avg: {audio.average_bitrate/1000:.0f} kbps, {audio.quality_level}"
+            results_table.add_row("Audio Bitrate", "✓ Success", metrics)
+        else:
+            results_table.add_row("Audio Bitrate", "✗ Failed", "N/A")
+    
+    if config.enable_fps:
+        if combined_result.has_fps_analysis:
+            fps = combined_result.fps_analysis
+            metrics = f"Avg: {fps.actual_average_fps:.1f} fps, Drops: {fps.total_dropped_frames}"
+            results_table.add_row("FPS Analysis", "✓ Success", metrics)
+        else:
+            results_table.add_row("FPS Analysis", "✗ Failed", "N/A")
+    
+    console.print(results_table)
+    
+    # Export results if requested
+    if json_output or csv_output or output:
+        from ..utils.config import get_merged_config
+        import json
+        import csv
+        import os
+        from datetime import datetime
+        
+        config_manager = ConfigManager()
+        merged_config = get_merged_config(config_manager.get_config(), {})
+        
+        if output:
+            # Ensure output directory exists
+            os.makedirs(output, exist_ok=True)
+            base_name = os.path.splitext(os.path.basename(metadata.file_path))[0]
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        
+        # Export JSON
+        if json_output:
+            json_path = json_output
+        elif output:
+            json_path = os.path.join(output, f"{base_name}_parallel_{timestamp}.json")
+        else:
+            json_path = None
+            
+        if json_path:
+            export_data = {
+                "metadata": {
+                    "file_path": combined_result.file_path,
+                    "analysis_time": combined_result.analysis_time.isoformat(),
+                    "execution_time": combined_result.execution_time,
+                    "parallel_efficiency": combined_result.parallel_efficiency,
+                    "success_rate": combined_result.success_rate
+                },
+                "results": {}
+            }
+            
+            if combined_result.has_video_analysis:
+                video = combined_result.video_analysis
+                export_data["results"]["video"] = {
+                    "average_bitrate": video.average_bitrate,
+                    "max_bitrate": video.max_bitrate,
+                    "min_bitrate": video.min_bitrate,
+                    "encoding_type": video.encoding_type,
+                    "data_points": len(video.data_points)
+                }
+            
+            if combined_result.has_audio_analysis:
+                audio = combined_result.audio_analysis
+                export_data["results"]["audio"] = {
+                    "average_bitrate": audio.average_bitrate,
+                    "quality_level": audio.quality_level,
+                    "stability": audio.bitrate_stability,
+                    "codec": audio.codec,
+                    "data_points": len(audio.data_points)
+                }
+            
+            if combined_result.has_fps_analysis:
+                fps = combined_result.fps_analysis
+                export_data["results"]["fps"] = {
+                    "declared_fps": fps.declared_fps,
+                    "actual_average_fps": fps.actual_average_fps,
+                    "total_dropped_frames": fps.total_dropped_frames,
+                    "performance_rating": fps.performance_rating,
+                    "data_points": len(fps.data_points)
+                }
+            
+            with open(json_path, 'w', encoding='utf-8') as f:
+                json.dump(export_data, f, indent=2, ensure_ascii=False)
+            
+            console.print(f"[green]✓ JSON data exported to:[/green] {json_path}")
+        
+        # Export CSV (summary data)
+        if csv_output:
+            csv_path = csv_output
+        elif output:
+            csv_path = os.path.join(output, f"{base_name}_parallel_summary_{timestamp}.csv")
+        else:
+            csv_path = None
+            
+        if csv_path:
+            with open(csv_path, 'w', newline='', encoding='utf-8') as f:
+                writer = csv.writer(f)
+                writer.writerow(['Analysis Type', 'Status', 'Average Bitrate/FPS', 'Quality/Performance'])
+                
+                if config.enable_video and combined_result.has_video_analysis:
+                    video = combined_result.video_analysis
+                    writer.writerow(['Video', 'Success', f"{video.average_bitrate/1000000:.2f} Mbps", video.encoding_type])
+                
+                if config.enable_audio and combined_result.has_audio_analysis:
+                    audio = combined_result.audio_analysis
+                    writer.writerow(['Audio', 'Success', f"{audio.average_bitrate/1000:.1f} kbps", audio.quality_level])
+                
+                if config.enable_fps and combined_result.has_fps_analysis:
+                    fps = combined_result.fps_analysis
+                    writer.writerow(['FPS', 'Success', f"{fps.actual_average_fps:.2f} fps", fps.performance_rating])
+            
+            console.print(f"[green]✓ CSV summary exported to:[/green] {csv_path}")
+    
+    if verbose:
+        console.print("\n[green]✓ Parallel analysis complete with detailed results[/green]")
+
+
+def batch_parallel_command(
+    file_paths: List[str] = typer.Argument(..., help="Video file paths, HTTP URLs, or HLS stream URLs"),
+    output: Optional[str] = typer.Option(None, "--output", "-o", help="Output directory for all results"),
+    mode: str = typer.Option("fast", "--mode", help="Analysis mode: fast, detailed, memory-optimized"),
+    max_workers: int = typer.Option(3, "--max-workers", help="Maximum parallel workers per file"),
+    enable_video: bool = typer.Option(True, "--video/--no-video", help="Enable/disable video analysis"),
+    enable_audio: bool = typer.Option(True, "--audio/--no-audio", help="Enable/disable audio analysis"),
+    enable_fps: bool = typer.Option(True, "--fps/--no-fps", help="Enable/disable FPS analysis"),
+    force_download: bool = typer.Option(False, "--force-download", help="Force re-download even if cached"),
+    workers: int = typer.Option(10, "--workers", help="Maximum download threads for HLS")
+):
+    """
+    Run parallel analysis on multiple video files.
+    """
+    import asyncio
+    from ..core.parallel_analyzer import (
+        ParallelAnalysisEngine, 
+        ParallelConfig, 
+        create_fast_config, 
+        create_detailed_config, 
+        create_memory_optimized_config
+    )
+    
+    if not file_paths:
+        console.print("[red]No input files provided[/red]")
+        raise typer.Exit(1)
+    
+    console.print(f"[blue]Starting batch parallel analysis for {len(file_paths)} files[/blue]")
+    
+    # Validate analysis selection
+    enabled_count = sum([enable_video, enable_audio, enable_fps])
+    if enabled_count == 0:
+        console.print("[red]At least one analysis type must be enabled[/red]")
+        raise typer.Exit(1)
+    
+    # Process each file
+    results = []
+    failed_files = []
+    
+    for i, input_path in enumerate(file_paths, 1):
+        console.print(f"\n[blue]Processing file {i}/{len(file_paths)}:[/blue] {input_path}")
+        
+        try:
+            # Process input file
+            processed_file = safe_process_file(
+                input_path, 
+                force_download=force_download,
+                max_workers=workers
+            )
+            if processed_file is None:
+                console.print(f"[red]✗ Failed to process: {input_path}[/red]")
+                failed_files.append(input_path)
+                continue
+            
+            # Get metadata and create config
+            metadata = processed_file.load_metadata()
+            
+            if mode == "fast":
+                config = create_fast_config(metadata.duration)
+            elif mode == "detailed":
+                config = create_detailed_config()
+            elif mode == "memory-optimized":
+                config = create_memory_optimized_config()
+            else:
+                config = ParallelConfig()
+            
+            # Override config
+            config.max_workers = max_workers
+            config.enable_video = enable_video
+            config.enable_audio = enable_audio
+            config.enable_fps = enable_fps
+            
+            # Run analysis
+            async def run_analysis():
+                engine = ParallelAnalysisEngine(config)
+                return await engine.analyze_all(processed_file)
+            
+            with console.status(f"[bold green]Analyzing {i}/{len(file_paths)}..."):
+                combined_result = asyncio.run(run_analysis())
+                results.append(combined_result)
+            
+            console.print(f"[green]✓ Completed in {combined_result.execution_time:.1f}s (efficiency: {combined_result.parallel_efficiency:.1%})[/green]")
+            
+        except Exception as e:
+            console.print(f"[red]✗ Analysis failed for {input_path}: {e}[/red]")
+            failed_files.append(input_path)
+    
+    # Summary
+    console.print(f"\n[bold green]Batch Analysis Complete[/bold green]")
+    console.print(f"[green]Successful:[/green] {len(results)}/{len(file_paths)}")
+    
+    if failed_files:
+        console.print(f"[red]Failed files:[/red] {len(failed_files)}")
+        for failed_file in failed_files:
+            console.print(f"  [red]✗[/red] {failed_file}")
+    
+    # Export batch results if output directory provided
+    if output and results:
+        import json
+        import os
+        from datetime import datetime
+        
+        os.makedirs(output, exist_ok=True)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        
+        # Create batch summary
+        batch_summary = {
+            "batch_info": {
+                "total_files": len(file_paths),
+                "successful_files": len(results),
+                "failed_files": len(failed_files),
+                "analysis_time": datetime.now().isoformat(),
+                "mode": mode,
+                "config": {
+                    "max_workers": max_workers,
+                    "enable_video": enable_video,
+                    "enable_audio": enable_audio,
+                    "enable_fps": enable_fps
+                }
+            },
+            "results": []
+        }
+        
+        for result in results:
+            result_summary = {
+                "file_path": result.file_path,
+                "execution_time": result.execution_time,
+                "parallel_efficiency": result.parallel_efficiency,
+                "success_rate": result.success_rate
+            }
+            
+            if result.has_video_analysis:
+                video = result.video_analysis
+                result_summary["video"] = {
+                    "average_bitrate_mbps": video.average_bitrate / 1000000,
+                    "encoding_type": video.encoding_type
+                }
+            
+            if result.has_audio_analysis:
+                audio = result.audio_analysis
+                result_summary["audio"] = {
+                    "average_bitrate_kbps": audio.average_bitrate / 1000,
+                    "quality_level": audio.quality_level
+                }
+            
+            if result.has_fps_analysis:
+                fps = result.fps_analysis
+                result_summary["fps"] = {
+                    "actual_average_fps": fps.actual_average_fps,
+                    "total_dropped_frames": fps.total_dropped_frames
+                }
+            
+            batch_summary["results"].append(result_summary)
+        
+        # Export batch summary
+        batch_file = os.path.join(output, f"batch_parallel_summary_{timestamp}.json")
+        with open(batch_file, 'w', encoding='utf-8') as f:
+            json.dump(batch_summary, f, indent=2, ensure_ascii=False)
+        
+        console.print(f"[green]✓ Batch summary exported to:[/green] {batch_file}")
+    
+    if results:
+        # Calculate overall statistics
+        total_time = sum(r.execution_time for r in results)
+        avg_efficiency = sum(r.parallel_efficiency for r in results) / len(results)
+        
+        console.print(f"\n[cyan]Overall Statistics:[/cyan]")
+        console.print(f"Total analysis time: {total_time:.1f}s")
+        console.print(f"Average parallel efficiency: {avg_efficiency:.1%}")
+        console.print(f"Files per minute: {len(results) / (total_time / 60):.1f}")
+
+
+def performance_test_command(
+    input_path: str = typer.Argument(..., help="Video file path for performance testing"),
+    runs: int = typer.Option(3, "--runs", help="Number of test runs"),
+    compare_sequential: bool = typer.Option(True, "--compare/--no-compare", help="Compare with sequential analysis"),
+    force_download: bool = typer.Option(False, "--force-download", help="Force re-download even if cached")
+):
+    """
+    Performance test comparing parallel vs sequential analysis.
+    """
+    import asyncio
+    import time
+    from statistics import mean, stdev
+    from ..core.parallel_analyzer import ParallelAnalysisEngine, ParallelConfig
+    from ..core.video_analyzer import VideoBitrateAnalyzer
+    from ..core.audio_analyzer import AudioBitrateAnalyzer
+    from ..core.fps_analyzer import FPSAnalyzer
+    
+    console.print(f"[blue]Performance testing:[/blue] {input_path}")
+    console.print(f"[blue]Test runs:[/blue] {runs}")
+    
+    # Process input file
+    processed_file = safe_process_file(input_path, force_download=force_download)
+    if processed_file is None:
+        console.print("[red]Input processing failed[/red]")
+        raise typer.Exit(1)
+    
+    metadata = processed_file.load_metadata()
+    console.print(f"[green]File duration:[/green] {metadata.duration/60:.1f} minutes")
+    
+    # Test parallel analysis
+    parallel_times = []
+    parallel_results = []
+    
+    console.print(f"\n[yellow]Running parallel analysis tests ({runs} runs)...[/yellow]")
+    
+    for i in range(runs):
+        config = ParallelConfig(max_workers=3)
+        engine = ParallelAnalysisEngine(config)
+        
+        async def run_parallel():
+            return await engine.analyze_all(processed_file)
+        
+        start_time = time.time()
+        with console.status(f"[bold green]Parallel run {i+1}/{runs}..."):
+            result = asyncio.run(run_parallel())
+        execution_time = time.time() - start_time
+        
+        parallel_times.append(execution_time)
+        parallel_results.append(result)
+        console.print(f"  Run {i+1}: {execution_time:.1f}s (efficiency: {result.parallel_efficiency:.1%})")
+    
+    # Test sequential analysis if requested
+    sequential_times = []
+    
+    if compare_sequential:
+        console.print(f"\n[yellow]Running sequential analysis tests ({runs} runs)...[/yellow]")
+        
+        for i in range(runs):
+            start_time = time.time()
+            
+            with console.status(f"[bold green]Sequential run {i+1}/{runs}..."):
+                # Sequential execution
+                video_analyzer = VideoBitrateAnalyzer()
+                audio_analyzer = AudioBitrateAnalyzer()
+                fps_analyzer = FPSAnalyzer()
+                
+                video_result = video_analyzer.analyze(processed_file)
+                audio_result = audio_analyzer.analyze(processed_file)
+                fps_result = fps_analyzer.analyze(processed_file)
+            
+            execution_time = time.time() - start_time
+            sequential_times.append(execution_time)
+            console.print(f"  Run {i+1}: {execution_time:.1f}s")
+    
+    # Performance comparison table
+    perf_table = Table(title="Performance Test Results")
+    perf_table.add_column("Metric", style="cyan", no_wrap=True)
+    perf_table.add_column("Parallel", style="magenta")
+    if compare_sequential:
+        perf_table.add_column("Sequential", style="yellow")
+        perf_table.add_column("Improvement", style="green")
+    
+    # Calculate statistics
+    parallel_avg = mean(parallel_times)
+    parallel_std = stdev(parallel_times) if len(parallel_times) > 1 else 0
+    
+    perf_table.add_row("Average Time", f"{parallel_avg:.1f}s")
+    perf_table.add_row("Std Deviation", f"{parallel_std:.1f}s")
+    perf_table.add_row("Best Time", f"{min(parallel_times):.1f}s")
+    perf_table.add_row("Worst Time", f"{max(parallel_times):.1f}s")
+    
+    if compare_sequential:
+        sequential_avg = mean(sequential_times)
+        sequential_std = stdev(sequential_times) if len(sequential_times) > 1 else 0
+        improvement = ((sequential_avg - parallel_avg) / sequential_avg) * 100
+        
+        perf_table.add_row("", f"{sequential_avg:.1f}s", f"{improvement:+.1f}%")
+        perf_table.add_row("", f"{sequential_std:.1f}s", "")
+        perf_table.add_row("", f"{min(sequential_times):.1f}s", "")
+        perf_table.add_row("", f"{max(sequential_times):.1f}s", "")
+    
+    console.print(perf_table)
+    
+    # Efficiency statistics
+    if parallel_results:
+        efficiencies = [r.parallel_efficiency for r in parallel_results]
+        avg_efficiency = mean(efficiencies)
+        
+        console.print(f"\n[cyan]Parallel Efficiency:[/cyan] {avg_efficiency:.1%} (avg)")
+        console.print(f"[cyan]Best efficiency:[/cyan] {max(efficiencies):.1%}")
+        console.print(f"[cyan]Worst efficiency:[/cyan] {min(efficiencies):.1%}")
+    
+    if compare_sequential and sequential_times:
+        console.print(f"\n[green]Performance improvement: {improvement:+.1f}%[/green]")
+        
+        if improvement > 30:
+            console.print("[green]✓ Excellent parallel performance![/green]")
+        elif improvement > 15:
+            console.print("[yellow]✓ Good parallel performance[/yellow]")
+        elif improvement > 0:
+            console.print("[yellow]✓ Modest parallel improvement[/yellow]")
+        else:
+            console.print("[red]⚠ Parallel analysis may be slower than sequential[/red]")

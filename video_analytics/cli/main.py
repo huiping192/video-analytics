@@ -27,7 +27,10 @@ from .commands import (
     cache_list_command,
     cache_clear_command,
     cache_info_command,
-    cache_remove_command
+    cache_remove_command,
+    parallel_analysis_command,
+    batch_parallel_command,
+    performance_test_command
 )
 
 app = typer.Typer(
@@ -51,6 +54,11 @@ app.command("fps", help="Analyze FPS and dropped frames")(fps_command)
 app.command("batch_fps", help="Analyze FPS for multiple videos")(batch_fps_command)
 app.command("chart", help="Generate analysis charts")(chart_command)
 app.command("batch_chart", help="Generate charts for multiple videos")(batch_chart_command)
+
+# Parallel analysis commands (NEW - Performance optimized)
+app.command("parallel", help="Run comprehensive parallel analysis (video+audio+fps)")(parallel_analysis_command)
+app.command("batch_parallel", help="Run parallel analysis on multiple videos")(batch_parallel_command)
+app.command("performance", help="Performance test comparing parallel vs sequential analysis")(performance_test_command)
 
 # Download and cache management commands
 app.command("download", help="Download video from HTTP URL or HLS stream")(download_command)
