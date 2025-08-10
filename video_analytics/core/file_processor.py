@@ -77,9 +77,9 @@ class ProcessedFile:
             
             return VideoMetadata(
                 file_path=self.file_path,
-                duration=float(format_info['duration']),
-                file_size=int(format_info['size']),
-                format_name=format_info['format_name'],
+                duration=float(format_info.get('duration', 0)),
+                file_size=int(format_info.get('size', 0)),
+                format_name=format_info.get('format_name', 'unknown'),
                 bit_rate=int(format_info.get('bit_rate', 0)),
                 
                 # Video stream info
@@ -101,7 +101,133 @@ class ProcessedFile:
             )
             
         except ffmpeg.Error as e:
-            raise ValueError(f"FFmpeg probe failed: {e}")
+            # Try to fix common HLS/fMP4 issues before giving up
+            stderr = e.stderr.decode('utf-8') if e.stderr else ''
+            
+            if 'could not find corresponding trex' in stderr or 'trun track id unknown' in stderr:
+                # Try fixing fMP4 format issues
+                if self._attempt_file_fix():
+                    try:
+                        # Retry probe after fixing
+                        probe = ffmpeg.probe(self.file_path)
+                        format_info = probe['format']
+                        
+                        # Find video and audio streams
+                        video_stream = None
+                        audio_stream = None
+                        
+                        for stream in probe['streams']:
+                            if stream['codec_type'] == 'video' and video_stream is None:
+                                video_stream = stream
+                            elif stream['codec_type'] == 'audio' and audio_stream is None:
+                                audio_stream = stream
+                        
+                        return VideoMetadata(
+                            file_path=self.file_path,
+                            duration=float(format_info['duration']),
+                            file_size=int(format_info['size']),
+                            format_name=format_info['format_name'],
+                            bit_rate=int(format_info.get('bit_rate', 0)),
+                            
+                            # Video stream info
+                            video_codec=video_stream['codec_name'] if video_stream else '',
+                            width=video_stream.get('width', 0) if video_stream else 0,
+                            height=video_stream.get('height', 0) if video_stream else 0,
+                            fps=self._parse_fps(video_stream) if video_stream else 0.0,
+                            video_bitrate=int(video_stream.get('bit_rate', 0)) if video_stream else 0,
+                            
+                            # Audio stream info
+                            audio_codec=audio_stream['codec_name'] if audio_stream else '',
+                            channels=audio_stream.get('channels', 0) if audio_stream else 0,
+                            sample_rate=audio_stream.get('sample_rate', 0) if audio_stream else 0,
+                            audio_bitrate=int(audio_stream.get('bit_rate', 0)) if audio_stream else 0,
+                            
+                            # Source info
+                            original_url=self.original_url,
+                            is_cached=self.is_cached,
+                        )
+                    except ffmpeg.Error:
+                        pass
+            
+            raise ValueError(f"File format issue - FFmpeg probe failed: {e}")
+    
+    def _attempt_file_fix(self) -> bool:
+        """Attempt to fix common HLS/fMP4 format issues"""
+        try:
+            import shutil
+            from ..utils.logger import get_logger
+            logger = get_logger(__name__)
+            
+            # Create a fixed version using FFmpeg
+            fixed_path = self.file_path + '.fixed.mp4'
+            
+            # Try multiple fixing strategies
+            strategies = [
+                # Strategy 1: Simple remux with faststart
+                lambda: (
+                    ffmpeg
+                    .input(self.file_path)
+                    .output(fixed_path, c='copy', f='mp4', movflags='faststart')
+                    .overwrite_output()
+                    .run(capture_stdout=True, capture_stderr=True, quiet=True)
+                ),
+                # Strategy 2: Force MP4 format with fragment fixing 
+                lambda: (
+                    ffmpeg
+                    .input(self.file_path)
+                    .output(fixed_path, c='copy', f='mp4', movflags='faststart+frag_keyframe', fflags='+genpts')
+                    .overwrite_output()
+                    .run(capture_stdout=True, capture_stderr=True, quiet=True)
+                ),
+                # Strategy 3: Re-encode to fix corruption (slower but more reliable)
+                lambda: (
+                    ffmpeg
+                    .input(self.file_path)
+                    .output(fixed_path, vcodec='libx264', acodec='aac', crf=23, preset='medium', f='mp4', movflags='faststart')
+                    .overwrite_output()
+                    .run(capture_stdout=True, capture_stderr=True, quiet=True)
+                )
+            ]
+            
+            for i, strategy in enumerate(strategies):
+                try:
+                    logger.info(f"Trying file fix strategy {i+1}/3...")
+                    strategy()
+                    
+                    # Verify the fixed file is readable
+                    try:
+                        ffmpeg.probe(fixed_path)
+                        # If probe succeeds, replace original
+                        shutil.move(fixed_path, self.file_path)
+                        logger.info(f"Successfully fixed file using strategy {i+1}")
+                        return True
+                    except ffmpeg.Error:
+                        # Fixed file still has issues, try next strategy
+                        if os.path.exists(fixed_path):
+                            os.remove(fixed_path)
+                        continue
+                        
+                except Exception as e:
+                    logger.debug(f"Fix strategy {i+1} failed: {e}")
+                    if os.path.exists(fixed_path):
+                        try:
+                            os.remove(fixed_path)
+                        except:
+                            pass
+                    continue
+            
+            logger.warning("All file fix strategies failed")
+            return False
+            
+        except Exception as e:
+            # Clean up if fix failed
+            fixed_path = self.file_path + '.fixed.mp4'
+            if os.path.exists(fixed_path):
+                try:
+                    os.remove(fixed_path)
+                except:
+                    pass
+            return False
     
     def _parse_fps(self, video_stream: dict) -> float:
         """Parse FPS value"""

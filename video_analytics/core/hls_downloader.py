@@ -92,9 +92,83 @@ class HLSDownloader:
         """
         logger.info(f"Starting HLS download: {hls_url}")
         
+        if output_path is None:
+            output_path = self._generate_output_path(hls_url)
+        
+        # Try FFmpeg native download first (most reliable for complex streams)
+        logger.info("Trying FFmpeg native download first...")
+        result = self._download_with_ffmpeg(hls_url, output_path)
+        
+        if result.success:
+            return result
+        
+        # Fallback to manual segment download
+        logger.info("FFmpeg download failed, trying high-performance manual download...")
+        return self._download_segments_manually(hls_url, output_path)
+    
+    def _download_with_ffmpeg(self, hls_url: str, output_path: str) -> DownloadResult:
+        """Download HLS stream using FFmpeg native support"""
+        try:
+            import ffmpeg
+            
+            logger.info("Using FFmpeg native HLS download...")
+            
+            # Use FFmpeg to download and convert HLS stream directly
+            (
+                ffmpeg
+                .input(hls_url, **{
+                    'user_agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    'headers': 'Accept: */*\r\nAccept-Language: en-US,en;q=0.9,ja;q=0.8\r\n'
+                })
+                .output(output_path, c='copy', f='mp4', movflags='faststart')
+                .overwrite_output()
+                .run(capture_stdout=True, capture_stderr=True)
+            )
+            
+            if os.path.exists(output_path):
+                file_size = os.path.getsize(output_path)
+                
+                # Try to get duration from the downloaded file
+                try:
+                    probe = ffmpeg.probe(output_path)
+                    duration = float(probe['format']['duration'])
+                except:
+                    duration = 0.0
+                
+                logger.info(f"FFmpeg HLS download complete: {output_path} ({file_size/1024/1024:.1f} MB)")
+                
+                return DownloadResult(
+                    success=True,
+                    local_file_path=output_path,
+                    total_size=file_size,
+                    duration=duration,
+                    segments_count=0  # Unknown for FFmpeg download
+                )
+            else:
+                return DownloadResult(
+                    success=False,
+                    error_message="FFmpeg download completed but output file not found"
+                )
+                
+        except ffmpeg.Error as e:
+            stderr = e.stderr.decode('utf-8') if e.stderr else 'No stderr available'
+            logger.error(f"FFmpeg HLS download failed: {stderr}")
+            return DownloadResult(
+                success=False,
+                error_message=f"FFmpeg download failed: {str(e)}"
+            )
+        except Exception as e:
+            logger.error(f"FFmpeg HLS download failed: {e}")
+            return DownloadResult(
+                success=False,
+                error_message=f"FFmpeg download error: {str(e)}"
+            )
+    
+    def _download_segments_manually(self, hls_url: str, output_path: str) -> DownloadResult:
+        """Fallback: Download HLS segments manually and merge"""
         try:
             # Parse HLS playlist
-            segments = self._parse_hls_playlist(hls_url)
+            segments, init_segment_url = self._parse_hls_playlist(hls_url)
             if not segments:
                 return DownloadResult(
                     success=False, 
@@ -105,6 +179,13 @@ class HLSDownloader:
             
             # Create temporary directory for segments
             with tempfile.TemporaryDirectory() as temp_dir:
+                # Download init segment first if exists
+                init_segment_file = None
+                if init_segment_url:
+                    init_segment_file = self._download_init_segment(init_segment_url, temp_dir)
+                    if not init_segment_file:
+                        logger.warning("Failed to download init segment, trying without it")
+                
                 # Download all segments concurrently
                 segment_files = self._download_segments(segments, temp_dir)
                 
@@ -114,17 +195,14 @@ class HLSDownloader:
                         error_message="Failed to download any segments"
                     )
                 
-                # Merge segments into single file
-                if output_path is None:
-                    output_path = self._generate_output_path(hls_url)
-                
-                success = self._merge_segments(segment_files, output_path)
+                # Merge segments into single file (with init segment if available)
+                success = self._merge_segments_with_init(segment_files, output_path, init_segment_file)
                 
                 if success:
                     file_size = os.path.getsize(output_path)
                     total_duration = sum(s.duration for s in segments)
                     
-                    logger.info(f"HLS download complete: {output_path} ({file_size/1024/1024:.1f} MB)")
+                    logger.info(f"Manual HLS download complete: {output_path} ({file_size/1024/1024:.1f} MB)")
                     
                     return DownloadResult(
                         success=True,
@@ -140,17 +218,20 @@ class HLSDownloader:
                     )
                     
         except Exception as e:
-            logger.error(f"HLS download failed: {e}")
+            logger.error(f"Manual HLS download failed: {e}")
             return DownloadResult(
                 success=False,
-                error_message=f"Download error: {str(e)}"
+                error_message=f"Manual download error: {str(e)}"
             )
     
-    def _parse_hls_playlist(self, hls_url: str) -> List[SegmentInfo]:
-        """Parse HLS playlist and extract segment information"""
+    def _parse_hls_playlist(self, hls_url: str) -> Tuple[List[SegmentInfo], Optional[str]]:
+        """Parse HLS playlist and extract segment information with init segment"""
         try:
             # Load playlist
             playlist = m3u8.load(hls_url, timeout=self.timeout)
+            
+            # Track the actual playlist URL for base URL calculation
+            actual_playlist_url = hls_url
             
             # Handle master playlist (multivariant) - select highest quality stream
             if playlist.is_variant and playlist.playlists:
@@ -168,13 +249,26 @@ class HLSDownloader:
                 
                 # Load the actual playlist with segments
                 playlist = m3u8.load(variant_url, timeout=self.timeout)
+                actual_playlist_url = variant_url
             
             if not playlist.segments:
                 logger.error("No segments found in HLS playlist")
-                return []
+                return [], None
             
+            # Check for init segment (required for fMP4)
+            init_segment_url = None
+            if playlist.segments and hasattr(playlist.segments[0], 'init_section') and playlist.segments[0].init_section:
+                init_uri = playlist.segments[0].init_section.uri
+                base_url = self._get_base_url(actual_playlist_url)
+                if not init_uri.startswith(('http://', 'https://')):
+                    init_segment_url = urljoin(base_url, init_uri)
+                else:
+                    init_segment_url = init_uri
+                logger.info(f"Found init segment: {init_segment_url}")
+            
+            # Parse regular segments
             segments = []
-            base_url = self._get_base_url(hls_url)
+            base_url = self._get_base_url(actual_playlist_url)
             
             for i, segment in enumerate(playlist.segments):
                 # Handle relative URLs
@@ -189,11 +283,11 @@ class HLSDownloader:
                 ))
             
             logger.info(f"Parsed {len(segments)} segments from HLS playlist")
-            return segments
+            return segments, init_segment_url
             
         except Exception as e:
             logger.error(f"Failed to parse HLS playlist: {e}")
-            return []
+            return [], None
     
     def _get_base_url(self, hls_url: str) -> str:
         """Extract base URL for resolving relative segment URLs"""
@@ -252,6 +346,38 @@ class HLSDownloader:
         logger.info(f"Successfully downloaded {len(successful_files)}/{len(segments)} segments")
         return successful_files
     
+    def _download_init_segment(self, init_url: str, temp_dir: str) -> Optional[str]:
+        """Download init segment for fMP4 streams"""
+        try:
+            response = self.session.get(init_url, timeout=self.timeout, stream=True)
+            response.raise_for_status()
+            
+            # Create output file
+            init_path = os.path.join(temp_dir, 'init_segment.mp4')
+            
+            with open(init_path, 'wb') as f:
+                for chunk in response.iter_content(chunk_size=8192):
+                    if chunk:
+                        f.write(chunk)
+            
+            logger.info(f"Downloaded init segment: {init_path}")
+            return init_path
+            
+        except Exception as e:
+            logger.error(f"Failed to download init segment: {e}")
+            return None
+    
+    def _merge_segments_with_init(self, segment_files: List[str], output_path: str, init_segment_file: Optional[str] = None) -> bool:
+        """Merge segments with optional init segment"""
+        if init_segment_file:
+            logger.info(f"Merging {len(segment_files)} segments with init segment")
+            # Prepend init segment to the list
+            all_files = [init_segment_file] + segment_files
+            return self._merge_segments(all_files, output_path)
+        else:
+            logger.info(f"Merging {len(segment_files)} segments without init segment")
+            return self._merge_segments(segment_files, output_path)
+    
     def _download_single_segment(self, segment: SegmentInfo, temp_dir: str) -> Optional[str]:
         """Download a single HLS segment"""
         try:
@@ -278,7 +404,287 @@ class HLSDownloader:
         try:
             import ffmpeg
             
-            # Create input list file for FFmpeg
+            # Sort segment files to ensure correct order
+            segment_files.sort()
+            
+            if not segment_files:
+                logger.error("No segment files to merge")
+                return False
+            
+            # Detect actual segment format by examining file headers
+            segment_format = self._detect_segment_format(segment_files[0])
+            logger.info(f"Detected segment format: {segment_format}")
+            
+            if segment_format == 'fmp4':
+                # For fMP4 segments, use specialized handling
+                logger.info(f"Using specialized fMP4 merge for {len(segment_files)} segments")
+                return self._merge_fmp4_segments(segment_files, output_path)
+            elif segment_format == 'ts':
+                # Use FFmpeg concat for TS segments
+                logger.info(f"Using TS merge for {len(segment_files)} segments") 
+                return self._merge_ts_segments(segment_files, output_path)
+            else:
+                # For unknown format, try to detect based on content and use appropriate method
+                logger.info(f"Using default merge approach for {len(segment_files)} segments (format: {segment_format})")
+                return self._merge_with_ffmpeg_default(segment_files, output_path)
+            
+        except Exception as e:
+            logger.error(f"Failed to merge segments: {e}")
+            return False
+    
+    def _detect_segment_format(self, segment_file: str) -> str:
+        """Detect segment format by examining file header"""
+        try:
+            with open(segment_file, 'rb') as f:
+                header = f.read(32)  # Read more bytes for better detection
+                
+            # Check for fMP4 signature (ftyp box)
+            if header[4:8] == b'ftyp':
+                return 'fmp4'
+            # Check for MPEG-4 container anywhere in header
+            elif b'ftyp' in header:
+                return 'fmp4'
+            # Check for MP4 box signatures
+            elif header[4:8] in [b'moof', b'moov', b'styp', b'sidx']:
+                return 'fmp4'
+            # Check for TS sync byte at start
+            elif header[0:1] == b'\x47':
+                return 'ts'
+            # Check for TS sync bytes at other positions (188-byte packets)
+            elif header[188:189] == b'\x47' or header[376:377] == b'\x47':
+                return 'ts'
+            # Check if file extension suggests format
+            elif segment_file.endswith('.mp4') or segment_file.endswith('.m4s'):
+                return 'fmp4'
+            elif segment_file.endswith('.ts'):
+                # Check if it's actually fMP4 with .ts extension (common in modern HLS)
+                if len(header) >= 8 and (b'ftyp' in header or header[4:8] in [b'moof', b'moov']):
+                    return 'fmp4'
+                else:
+                    return 'ts'
+            else:
+                logger.warning(f"Could not detect format for segment: {segment_file}, header: {header[:8]}")
+                return 'unknown'
+                
+        except Exception as e:
+            logger.error(f"Format detection failed: {e}")
+            return 'unknown'
+    
+    def _merge_fmp4_segments(self, segment_files: List[str], output_path: str) -> bool:
+        """Merge fMP4 segments using optimal FFmpeg strategy"""
+        try:
+            import ffmpeg
+            
+            # Strategy 1: Try FFmpeg with explicit fMP4 handling
+            logger.info(f"Attempting FFmpeg fMP4 merge for {len(segment_files)} segments...")
+            
+            try:
+                # Create input list for FFmpeg
+                list_file_path = output_path + '.list'
+                
+                with open(list_file_path, 'w') as f:
+                    for segment_file in segment_files:
+                        f.write(f"file '{segment_file}'\n")
+                
+                # Use FFmpeg with fMP4-optimized settings
+                (
+                    ffmpeg
+                    .input(list_file_path, format='concat', safe=0, fflags='+genpts')
+                    .output(output_path, 
+                           c='copy', 
+                           f='mp4', 
+                           movflags='faststart+frag_keyframe',
+                           avoid_negative_ts='make_zero')
+                    .overwrite_output()
+                    .run(capture_stdout=True, capture_stderr=True, quiet=True)
+                )
+                
+                # Clean up list file
+                if os.path.exists(list_file_path):
+                    os.remove(list_file_path)
+                
+                # Verify the output file is readable
+                try:
+                    ffmpeg.probe(output_path)
+                    logger.info(f"Successfully merged {len(segment_files)} fMP4 segments with FFmpeg")
+                    return True
+                except ffmpeg.Error:
+                    logger.warning("FFmpeg merge produced unreadable file, trying alternative...")
+                    
+            except ffmpeg.Error as e:
+                # Clean up list file on error
+                if os.path.exists(list_file_path):
+                    os.remove(list_file_path)
+                
+                stderr = e.stderr.decode('utf-8') if e.stderr else 'No stderr available'
+                logger.warning(f"Standard FFmpeg merge failed: {stderr[:200]}...")
+            
+            # Strategy 2: Force re-encode first few segments to create proper header
+            logger.info("Trying header reconstruction approach...")
+            return self._merge_fmp4_with_header_fix(segment_files, output_path)
+                
+        except Exception as e:
+            logger.error(f"fMP4 merge failed: {e}")
+            return False
+    
+    def _merge_fmp4_with_header_fix(self, segment_files: List[str], output_path: str) -> bool:
+        """Advanced fMP4 merge with header reconstruction"""
+        try:
+            import ffmpeg
+            temp_dir = os.path.dirname(output_path)
+            
+            # Re-encode first segment to create proper MP4 header
+            header_segment = os.path.join(temp_dir, 'header_segment.mp4')
+            list_file_path = output_path + '.headerfix.list'
+            
+            try:
+                # Re-encode first segment with proper MP4 structure
+                (
+                    ffmpeg
+                    .input(segment_files[0])
+                    .output(header_segment, vcodec='copy', acodec='copy', f='mp4', 
+                           movflags='faststart+frag_keyframe')
+                    .overwrite_output()
+                    .run(capture_stdout=True, capture_stderr=True, quiet=True)
+                )
+                
+                # Create list with header segment + remaining segments
+                
+                with open(list_file_path, 'w') as f:
+                    f.write(f"file '{header_segment}'\n")
+                    for segment_file in segment_files[1:]:
+                        f.write(f"file '{segment_file}'\n")
+                
+                # Merge with the fixed header
+                (
+                    ffmpeg
+                    .input(list_file_path, format='concat', safe=0)
+                    .output(output_path, c='copy', f='mp4', movflags='faststart')
+                    .overwrite_output()
+                    .run(capture_stdout=True, capture_stderr=True, quiet=True)
+                )
+                
+                # Clean up
+                for cleanup_file in [header_segment, list_file_path]:
+                    if os.path.exists(cleanup_file):
+                        os.remove(cleanup_file)
+                
+                logger.info(f"Successfully merged {len(segment_files)} fMP4 segments with header fix")
+                return True
+                
+            except ffmpeg.Error as e:
+                # Clean up on error
+                for cleanup_file in [header_segment, list_file_path]:
+                    if os.path.exists(cleanup_file):
+                        try:
+                            os.remove(cleanup_file)
+                        except:
+                            pass
+                
+                stderr = e.stderr.decode('utf-8') if e.stderr else 'No stderr available'
+                logger.warning(f"Header fix merge failed: {stderr[:200]}...")
+                
+                # Final fallback: binary concatenation
+                logger.info("Trying binary concatenation as final fallback...")
+                return self._merge_with_binary_concat(segment_files, output_path)
+                
+        except Exception as e:
+            logger.error(f"Header fix merge failed: {e}")
+            return self._merge_with_binary_concat(segment_files, output_path)
+    
+    def _merge_fmp4_alternative(self, segment_files: List[str], output_path: str) -> bool:
+        """Alternative fMP4 merge using binary concatenation or batch concat"""
+        try:
+            import ffmpeg
+            
+            # For large number of segments, use binary concatenation (most efficient for fMP4)
+            if len(segment_files) > 100:
+                logger.info(f"Using binary concatenation for {len(segment_files)} fMP4 segments")
+                return self._merge_with_binary_concat(segment_files, output_path)
+            else:
+                # For smaller numbers, try ffmpeg concat filter
+                try:
+                    inputs = [ffmpeg.input(f) for f in segment_files]
+                    
+                    # Use concat filter for fMP4
+                    (
+                        ffmpeg
+                        .concat(*inputs, v=1, a=1)
+                        .output(output_path, f='mp4', movflags='faststart')
+                        .overwrite_output()
+                        .run(capture_stdout=True, capture_stderr=True, quiet=True)
+                    )
+                    
+                    logger.info(f"Successfully merged {len(segment_files)} fMP4 segments using concat filter")
+                    return True
+                    
+                except Exception as e:
+                    logger.error(f"Concat filter failed: {e}")
+                    # Fallback to binary concatenation
+                    return self._merge_with_binary_concat(segment_files, output_path)
+            
+        except Exception as e:
+            logger.error(f"Alternative fMP4 merge failed: {e}")
+            return False
+    
+    def _merge_ts_segments(self, segment_files: List[str], output_path: str) -> bool:
+        """Merge TS segments using FFmpeg"""
+        try:
+            import ffmpeg
+            
+            if len(segment_files) == 1:
+                # Single segment, just copy
+                (
+                    ffmpeg
+                    .input(segment_files[0])
+                    .output(output_path, c='copy')
+                    .overwrite_output()
+                    .run(capture_stdout=True, capture_stderr=True, quiet=True)
+                )
+            else:
+                # Use concat demuxer for TS files
+                list_file_path = output_path + '.list'
+                
+                with open(list_file_path, 'w') as f:
+                    for segment_file in segment_files:
+                        f.write(f"file '{segment_file}'\n")
+                
+                try:
+                    (
+                        ffmpeg
+                        .input(list_file_path, format='concat', safe=0)
+                        .output(output_path, c='copy')
+                        .overwrite_output()
+                        .run(capture_stdout=True, capture_stderr=True, quiet=True)
+                    )
+                    
+                    # Clean up list file
+                    if os.path.exists(list_file_path):
+                        os.remove(list_file_path)
+                        
+                except ffmpeg.Error as e:
+                    # Clean up list file on error
+                    if os.path.exists(list_file_path):
+                        os.remove(list_file_path)
+                    raise e
+            
+            logger.info(f"Successfully merged {len(segment_files)} TS segments")
+            return True
+            
+        except ffmpeg.Error as e:
+            stderr = e.stderr.decode('utf-8') if e.stderr else 'No stderr available'
+            logger.error(f"TS merge failed: {stderr}")
+            return False
+        except Exception as e:
+            logger.error(f"TS merge failed: {e}")
+            return False
+    
+    def _merge_with_ffmpeg_default(self, segment_files: List[str], output_path: str) -> bool:
+        """Default FFmpeg merge approach with fallbacks"""
+        try:
+            import ffmpeg
+            
+            # Try concat demuxer first
             list_file_path = output_path + '.list'
             
             with open(list_file_path, 'w') as f:
@@ -286,25 +692,96 @@ class HLSDownloader:
                     f.write(f"file '{segment_file}'\n")
             
             try:
-                # Use FFmpeg concat demuxer for efficient merging
                 (
                     ffmpeg
                     .input(list_file_path, format='concat', safe=0)
                     .output(output_path, c='copy')
                     .overwrite_output()
-                    .run(capture_stdout=True, capture_stderr=True)
+                    .run(capture_stdout=True, capture_stderr=True, quiet=True)
                 )
                 
-                logger.info(f"Successfully merged {len(segment_files)} segments")
-                return True
-                
-            finally:
                 # Clean up list file
                 if os.path.exists(list_file_path):
                     os.remove(list_file_path)
+                
+                logger.info(f"Successfully merged {len(segment_files)} segments using default approach")
+                return True
+                
+            except ffmpeg.Error as e:
+                # Clean up list file on error
+                if os.path.exists(list_file_path):
+                    os.remove(list_file_path)
+                
+                stderr = e.stderr.decode('utf-8') if e.stderr else 'No stderr available'
+                logger.error(f"Default merge failed: {stderr}")
+                
+                # Fallback to binary concatenation for small numbers
+                if len(segment_files) <= 100:
+                    return self._merge_with_binary_concat(segment_files, output_path)
+                else:
+                    return False
+                    
+        except Exception as e:
+            logger.error(f"Default merge failed: {e}")
+            return False
+    
+    def _merge_with_remux_fallback(self, segment_files: List[str], output_path: str) -> bool:
+        """Final fallback: remux each segment and then concat"""
+        try:
+            import ffmpeg
+            temp_dir = os.path.dirname(output_path)
+            remuxed_files = []
+            
+            # Remux each segment to ensure compatibility
+            for i, segment_file in enumerate(segment_files[:10]):  # Limit to first 10 for safety
+                remuxed_path = os.path.join(temp_dir, f"remuxed_{i:06d}.mp4")
+                
+                try:
+                    (
+                        ffmpeg
+                        .input(segment_file)
+                        .output(remuxed_path, c='copy', f='mp4')
+                        .overwrite_output()
+                        .run(capture_stdout=True, capture_stderr=True, quiet=True)
+                    )
+                    remuxed_files.append(remuxed_path)
+                except:
+                    # Skip problematic segments
+                    continue
+            
+            if remuxed_files:
+                # Concat remuxed files
+                result = self._merge_with_ffmpeg_default(remuxed_files, output_path)
+                
+                # Clean up remuxed files
+                for f in remuxed_files:
+                    try:
+                        os.remove(f)
+                    except:
+                        pass
+                        
+                return result
+            else:
+                return False
+                
+        except Exception as e:
+            logger.error(f"Remux fallback failed: {e}")
+            return False
+    
+    def _merge_with_binary_concat(self, segment_files: List[str], output_path: str) -> bool:
+        """Binary concatenation fallback"""
+        try:
+            logger.info("Trying binary concatenation as fallback...")
+            with open(output_path, 'wb') as outfile:
+                for segment_file in segment_files:
+                    with open(segment_file, 'rb') as infile:
+                        outfile.write(infile.read())
+            
+            logger.info(f"Successfully merged {len(segment_files)} segments using binary concat")
+            return True
             
         except Exception as e:
-            logger.error(f"Failed to merge segments: {e}")
+            logger.error(f"Binary concatenation failed: {e}")
             return False
     
     def _generate_output_path(self, hls_url: str) -> str:
