@@ -298,10 +298,11 @@ class EnhancedPanelDrawer:
             
             # Status indicator
             status_color = self.colors['poor'] if has_issue else self.colors['excellent']
-            status_symbol = '⚠️' if has_issue else '✅'
+            status_symbol = '!' if has_issue else '✓'
             
             ax.text(0.1, y, status_symbol,
-                   ha='center', va='center', fontsize=self.font_sizes['content'])
+                   ha='center', va='center', fontsize=self.font_sizes['content'],
+                   color=status_color, fontweight='bold')
             
             # Issue name
             ax.text(0.2, y, issue_name,
