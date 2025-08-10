@@ -8,6 +8,9 @@ import tempfile
 import shutil
 import hashlib
 import threading
+import subprocess
+import re
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import List, Optional, Tuple
 from urllib.parse import urljoin, urlparse
@@ -15,7 +18,7 @@ from dataclasses import dataclass
 
 import requests
 import m3u8
-from rich.progress import Progress, BarColumn, TextColumn, TimeRemainingColumn, DownloadColumn
+from rich.progress import Progress, BarColumn, TextColumn, TimeRemainingColumn, DownloadColumn, SpinnerColumn, TransferSpeedColumn
 from rich.console import Console
 
 from ..utils.logger import get_logger
@@ -107,23 +110,63 @@ class HLSDownloader:
         return self._download_segments_manually(hls_url, output_path)
     
     def _download_with_ffmpeg(self, hls_url: str, output_path: str) -> DownloadResult:
-        """Download HLS stream using FFmpeg native support"""
+        """Download HLS stream using FFmpeg native support with user confirmation"""
         try:
+            # First estimate file size for user confirmation
+            estimated_size_mb, estimated_duration = self.estimate_download_time(hls_url)
+            
+            # Show user confirmation for large files (>1GB)
+            if estimated_size_mb > 1000:
+                from rich.console import Console
+                from rich.prompt import Confirm
+                
+                console = Console()
+                console.print(f"\n[yellow]检测到大文件下载：[/yellow]")
+                console.print(f"  预估大小: [bold]{estimated_size_mb:.1f} MB[/bold]")
+                console.print(f"  预估时长: [bold]{estimated_duration/60:.1f} 分钟[/bold]")
+                console.print(f"  下载地址: {hls_url[:80]}...")
+                
+                if not Confirm.ask("\n是否继续下载？", default=False):
+                    return DownloadResult(
+                        success=False,
+                        error_message="用户取消下载"
+                    )
+                
+                console.print("\n[green]开始下载...[/green]")
+            elif estimated_size_mb > 500:  # Show info for medium files
+                from rich.console import Console
+                console = Console()
+                console.print(f"[blue]下载信息：[/blue] 预估大小 {estimated_size_mb:.1f} MB，时长 {estimated_duration/60:.1f} 分钟")
+            
             import ffmpeg
             
-            logger.info("Using FFmpeg native HLS download...")
+            logger.info(f"Using FFmpeg native HLS download for {estimated_size_mb:.1f}MB file...")
             
-            # Use FFmpeg to download and convert HLS stream directly
-            (
+            # Get optimized parameters based on file size
+            input_args = self._get_optimized_input_args(estimated_size_mb)
+            output_args = self._get_optimized_output_args(estimated_size_mb)
+            
+            # Use FFmpeg to download with progress monitoring
+            process = (
                 ffmpeg
-                .input(hls_url, **{
-                    'user_agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                    'headers': 'Accept: */*\r\nAccept-Language: en-US,en;q=0.9,ja;q=0.8\r\n'
-                })
-                .output(output_path, c='copy', f='mp4', movflags='faststart')
+                .input(hls_url, **input_args)
+                .output(output_path, **output_args)
                 .overwrite_output()
-                .run(capture_stdout=True, capture_stderr=True)
+                .run_async(pipe_stderr=True, pipe_stdout=True)
             )
+            
+            # Monitor FFmpeg progress
+            self._monitor_ffmpeg_progress(process, output_path, estimated_duration)
+            
+            # Check process exit code
+            if process.returncode != 0:
+                # FFmpeg failed - collect error output
+                stderr_output = process.stderr.read().decode('utf-8', errors='ignore') if process.stderr else ''
+                logger.error(f"FFmpeg HLS download failed with code {process.returncode}: {stderr_output[:200]}...")
+                return DownloadResult(
+                    success=False,
+                    error_message=f"FFmpeg download failed (exit code {process.returncode})"
+                )
             
             if os.path.exists(output_path):
                 file_size = os.path.getsize(output_path)
@@ -133,7 +176,7 @@ class HLSDownloader:
                     probe = ffmpeg.probe(output_path)
                     duration = float(probe['format']['duration'])
                 except:
-                    duration = 0.0
+                    duration = estimated_duration
                 
                 logger.info(f"FFmpeg HLS download complete: {output_path} ({file_size/1024/1024:.1f} MB)")
                 
@@ -163,6 +206,99 @@ class HLSDownloader:
                 success=False,
                 error_message=f"FFmpeg download error: {str(e)}"
             )
+    
+    def _get_optimized_input_args(self, estimated_size_mb: float) -> dict:
+        """Get optimized FFmpeg input arguments based on file size"""
+        input_args = {
+            'user_agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'headers': 'Accept: */*\r\nConnection: keep-alive\r\n'
+        }
+        
+        # Large file optimizations (>500MB)
+        if estimated_size_mb > 500:
+            input_args.update({
+                'http_persistent': '1',      # Keep HTTP connections alive
+                'multiple_requests': '1',     # Allow multiple concurrent requests
+                'max_reload': '10',          # Increase retry attempts
+                'reconnect': '1',            # Enable automatic reconnection
+                'reconnect_streamed': '1',   # Enable streaming reconnection
+                'reconnect_delay_max': '5'   # Maximum reconnection delay (seconds)
+            })
+        
+        # Super large file optimizations (>2GB)
+        if estimated_size_mb > 2000:
+            input_args.update({
+                'max_reload': '20',          # Even more retries for huge files
+                'reconnect_delay_max': '10', # Longer delay for stability
+                'timeout': '30'              # Extended timeout
+            })
+        
+        return input_args
+    
+    def _get_optimized_output_args(self, estimated_size_mb: float) -> dict:
+        """Get optimized FFmpeg output arguments based on file size"""
+        output_args = {
+            'c': 'copy',     # Stream copy (no re-encoding)
+            'f': 'mp4',      # MP4 container format
+            'movflags': 'faststart'  # Optimize for web playback
+        }
+        
+        # Large file optimizations
+        if estimated_size_mb > 2000:
+            # For very large files, use fragmented MP4 for better streaming
+            output_args['movflags'] = 'empty_moov+default_base_moof'
+        
+        return output_args
+    
+    def _monitor_ffmpeg_progress(self, process, output_path: str, estimated_duration: float):
+        """Monitor FFmpeg progress and display real-time updates"""
+        start_time = time.time()
+        
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+            TimeRemainingColumn(),
+            TransferSpeedColumn(),
+            console=console
+        ) as progress:
+            
+            download_task = progress.add_task("FFmpeg下载", total=100)
+            
+            while process.poll() is None:
+                line = process.stderr.readline()
+                if line:
+                    line = line.decode('utf-8', errors='ignore').strip()
+                    
+                    # Parse FFmpeg progress from stderr
+                    time_match = re.search(r'time=(\d{2}):(\d{2}):(\d{2}\.\d{2})', line)
+                    if time_match:
+                        hours, minutes, seconds = time_match.groups()
+                        current_time = int(hours) * 3600 + int(minutes) * 60 + float(seconds)
+                        
+                        if estimated_duration > 0:
+                            progress_percent = min((current_time / estimated_duration) * 100, 100)
+                            progress.update(download_task, completed=progress_percent)
+                    
+                    # Parse file size for transfer speed calculation
+                    size_match = re.search(r'size=\s*(\d+)kB', line)
+                    if size_match and os.path.exists(output_path):
+                        try:
+                            current_size = os.path.getsize(output_path)
+                            elapsed_time = time.time() - start_time
+                            if elapsed_time > 0:
+                                speed = current_size / elapsed_time
+                                progress.update(download_task, 
+                                              description=f"FFmpeg下载 ({current_size/1024/1024:.1f}MB)")
+                        except:
+                            pass
+                
+                time.sleep(0.1)  # Small delay to avoid excessive CPU usage
+            
+            # Wait for process to complete
+            process.wait()
+            progress.update(download_task, completed=100)
     
     def _download_segments_manually(self, hls_url: str, output_path: str) -> DownloadResult:
         """Fallback: Download HLS segments manually and merge"""
@@ -797,39 +933,80 @@ class HLSDownloader:
     
     def estimate_download_time(self, hls_url: str) -> Tuple[int, float]:
         """
-        Estimate download time and file size for HLS stream
+        Improved estimation with better sampling precision
         
         Returns:
             (estimated_size_mb, estimated_duration_seconds)
         """
         try:
-            segments = self._parse_hls_playlist(hls_url)
-            if not segments:
+            playlist = m3u8.load(hls_url, timeout=self.timeout)
+            
+            # Handle master playlist - select highest quality stream for estimation
+            if playlist.is_variant and playlist.playlists:
+                best_variant = max(playlist.playlists, 
+                                 key=lambda p: p.stream_info.bandwidth if p.stream_info else 0)
+                variant_url = urljoin(self._get_base_url(hls_url), best_variant.uri)
+                playlist = m3u8.load(variant_url, timeout=self.timeout)
+            
+            if not playlist.segments:
                 return 0, 0.0
             
-            total_duration = sum(s.duration for s in segments)
+            segments = playlist.segments
+            total_duration = sum(segment.duration for segment in segments)
             
-            # Sample first few segments to estimate bitrate
+            # Improved sampling: sample 10 segments for better precision
             sample_size = 0
             sample_duration = 0.0
-            samples_to_check = min(3, len(segments))
+            samples_to_check = min(10, len(segments))
             
-            for i in range(samples_to_check):
+            # Sample from beginning, middle, and end for better accuracy
+            sample_indices = []
+            if len(segments) >= 10:
+                # Sample evenly distributed segments
+                step = len(segments) // 10
+                sample_indices = [i * step for i in range(10)]
+            else:
+                # Sample all available segments
+                sample_indices = list(range(len(segments)))
+            
+            successful_samples = 0
+            for i in sample_indices:
                 try:
-                    response = self.session.head(segments[i].url, timeout=5)
+                    segment_url = segments[i].uri
+                    if not segment_url.startswith(('http://', 'https://')):
+                        base_url = self._get_base_url(hls_url if not playlist.is_variant 
+                                                    else variant_url)
+                        segment_url = urljoin(base_url, segment_url)
+                    
+                    response = self.session.head(segment_url, timeout=5)
                     if 'content-length' in response.headers:
                         sample_size += int(response.headers['content-length'])
                         sample_duration += segments[i].duration
+                        successful_samples += 1
                 except:
                     continue
             
-            if sample_duration > 0:
-                # Estimate total size based on sample
+            if sample_duration > 0 and successful_samples >= 3:
+                # Estimate total size based on improved sampling
                 estimated_size_bytes = (sample_size / sample_duration) * total_duration
                 estimated_size_mb = estimated_size_bytes / (1024 * 1024)
             else:
-                # Fallback estimation (assume 2-5 Mbps for typical video)
-                estimated_size_mb = total_duration * 3.0 / 8.0  # 3 Mbps average
+                # Enhanced fallback with bandwidth hint from playlist
+                fallback_bitrate = 3.0  # Default 3 Mbps
+                
+                # Try to get bitrate from stream info if available
+                if hasattr(playlist, 'playlists') and playlist.playlists:
+                    try:
+                        fallback_bitrate = playlist.playlists[0].stream_info.bandwidth / 1_000_000
+                    except:
+                        pass
+                elif hasattr(playlist, 'stream_info') and playlist.stream_info:
+                    try:
+                        fallback_bitrate = playlist.stream_info.bandwidth / 1_000_000
+                    except:
+                        pass
+                
+                estimated_size_mb = total_duration * fallback_bitrate / 8.0
             
             return int(estimated_size_mb), total_duration
             
