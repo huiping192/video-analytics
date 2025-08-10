@@ -17,17 +17,17 @@ from .fps_analyzer import FPSAnalysis
 
 class VideoQuality(Enum):
     """Video quality levels"""
-    EXCELLENT = "优秀"
-    GOOD = "良好"
-    FAIR = "一般"
-    POOR = "较差"
+    EXCELLENT = "Excellent"
+    GOOD = "Good"
+    FAIR = "Fair"
+    POOR = "Poor"
 
 
 class BitrateType(Enum):
     """Bitrate encoding type"""
-    CBR = "CBR (恒定码率)"
-    VBR = "VBR (可变码率)"
-    UNKNOWN = "未知"
+    CBR = "CBR (Constant Bitrate)"
+    VBR = "VBR (Variable Bitrate)"
+    UNKNOWN = "Unknown"
 
 
 @dataclass
@@ -150,16 +150,16 @@ def format_file_size(size_bytes: int) -> str:
 def format_duration(seconds: float) -> str:
     """Format duration in human readable format"""
     if seconds < 60:
-        return f"{int(seconds)}秒"
+        return f"{int(seconds)}s"
     elif seconds < 3600:
         minutes = int(seconds // 60)
         secs = int(seconds % 60)
-        return f"{minutes}分{secs}秒"
+        return f"{minutes}m {secs}s"
     else:
         hours = int(seconds // 3600)
         minutes = int((seconds % 3600) // 60)
         secs = int(seconds % 60)
-        return f"{hours}小时{minutes}分{secs}秒"
+        return f"{hours}h {minutes}m {secs}s"
 
 
 def get_codec_full_name(codec: str) -> str:
@@ -177,7 +177,7 @@ def get_codec_full_name(codec: str) -> str:
         'eac3': 'E-AC-3 (Dolby Digital Plus)',
         'opus': 'Opus',
         'vorbis': 'Vorbis',
-        'flac': 'FLAC (无损)',
+        'flac': 'FLAC (Lossless)',
     }
     return codec_map.get(codec.lower(), codec.upper())
 
@@ -185,15 +185,15 @@ def get_codec_full_name(codec: str) -> str:
 def get_audio_channels_description(channels: int) -> str:
     """Get audio channels description"""
     channel_map = {
-        1: "单声道",
-        2: "立体声",
-        5: "5.0环绕声", 
-        6: "5.1环绕声",
-        7: "6.1环绕声",
-        8: "7.1环绕声",
+        1: "Mono",
+        2: "Stereo",
+        5: "5.0 Surround", 
+        6: "5.1 Surround",
+        7: "6.1 Surround",
+        8: "7.1 Surround",
     }
-    base_desc = channel_map.get(channels, f"{channels}声道")
-    return f"{base_desc} ({channels}声道)"
+    base_desc = channel_map.get(channels, f"{channels} Channel")
+    return f"{base_desc} ({channels}ch)"
 
 
 def assess_overall_quality(bitrate_stability: float, fps_stability: float, 
@@ -236,22 +236,22 @@ def generate_recommendations(issue_detection: IssueDetection,
     recommendations = []
     
     if issue_detection.severe_dropped_frames:
-        recommendations.append("检测到严重掉帧，建议降低编码设置或提升硬件性能")
+        recommendations.append("Severe frame drops detected. Consider lowering encoding settings or upgrading hardware.")
     
     if issue_detection.has_bitrate_spikes:
-        recommendations.append("码率波动较大，建议使用更平滑的编码设置")
+        recommendations.append("High bitrate variation detected. Consider using smoother encoding settings.")
     
     if quality_assessment.bitrate_stability < 0.7:
-        recommendations.append("视频码率不够稳定，建议使用CBR编码或优化编码参数")
+        recommendations.append("Video bitrate is unstable. Consider using CBR encoding or optimizing parameters.")
     
     if quality_assessment.fps_stability < 0.8:
-        recommendations.append("帧率不够稳定，检查视频源或编码设置")
+        recommendations.append("Frame rate is inconsistent. Check video source or encoding settings.")
     
     if quality_assessment.overall_quality == VideoQuality.POOR:
-        recommendations.append("整体质量较低，建议重新编码或检查源文件")
+        recommendations.append("Overall quality is poor. Consider re-encoding or checking source file.")
     
     if not recommendations:
-        recommendations.append("视频质量良好，无需特殊优化")
+        recommendations.append("Video quality is good. No specific optimization needed.")
     
     return recommendations
 
@@ -288,7 +288,7 @@ def create_enhanced_analysis_info(
         audio_channels=metadata.channels,
         audio_channels_str=get_audio_channels_description(metadata.channels),
         sample_rate=int(metadata.sample_rate) if metadata.sample_rate else 0,
-        sample_rate_str=f"{int(metadata.sample_rate) // 1000} kHz" if metadata.sample_rate and int(metadata.sample_rate) > 0 else "未知"
+        sample_rate_str=f"{int(metadata.sample_rate) // 1000} kHz" if metadata.sample_rate and int(metadata.sample_rate) > 0 else "Unknown"
     )
     
     # Calculate stability metrics
