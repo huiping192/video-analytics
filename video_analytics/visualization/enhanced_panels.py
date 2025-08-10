@@ -55,44 +55,92 @@ class EnhancedPanelDrawer:
             'small': 8
         }
     
-    def draw_all_panels(self, enhanced_info: EnhancedAnalysisInfo, 
-                       start_y: float = 0.0, panel_height: float = 0.4):
-        """绘制所有信息面板"""
+    def _apply_info_level(self, info_level: str):
+        """根据信息级别调整字体与密度"""
+        level = (info_level or 'standard').lower()
+        if level == 'basic':
+            self.font_sizes = {
+                'title': 11,
+                'subtitle': 9,
+                'content': 8,
+                'small': 7
+            }
+        elif level == 'detailed':
+            self.font_sizes = {
+                'title': 13,
+                'subtitle': 11,
+                'content': 10,
+                'small': 9
+            }
+        else:
+            self.font_sizes = {
+                'title': 12,
+                'subtitle': 10,
+                'content': 9,
+                'small': 8
+            }
+    
+    def draw_all_panels(self, enhanced_info: EnhancedAnalysisInfo,
+                       start_y: float = 0.0, panel_height: float = 0.4,
+                       axes: Dict[str, Any] = None,
+                       show_panels: List[str] = None,
+                       info_level: str = 'standard'):
+        """绘制所有信息面板
         
-        # 计算4个面板的布局 (2x2网格)
-        panel_width = 0.25  # 每个面板占25%宽度
-        panel_height_each = panel_height / 2  # 分两行
+        Args:
+            enhanced_info: 增强分析信息
+            start_y: 起始Y（仅在未提供axes时生效）
+            panel_height: 面板高度比例（仅在未提供axes时生效）
+            axes: 可选，提供现有的axes字典 {'file_info': ax, ...}
+            show_panels: 需要显示的面板列表（默认全部）
+            info_level: 信息详细程度 basic/standard/detailed
+        """
+        self._apply_info_level(info_level)
         
-        # 面板位置配置
+        # 默认显示全部
+        if show_panels is None:
+            show_panels = ['file_info', 'codec_info', 'quality', 'issues']
+        show_set = set(show_panels)
+        
+        # 计算4个面板的布局 (2x2网格)（仅在未提供axes时使用）
+        panel_width = 0.25
+        panel_height_each = panel_height / 2
         panels = [
-            # 第一行
             {'pos': (0.0, start_y + panel_height_each), 'size': (panel_width, panel_height_each), 'type': 'file_info'},
             {'pos': (0.25, start_y + panel_height_each), 'size': (panel_width, panel_height_each), 'type': 'codec_info'},
-            # 第二行  
             {'pos': (0.5, start_y + panel_height_each), 'size': (panel_width, panel_height_each), 'type': 'quality'},
             {'pos': (0.75, start_y + panel_height_each), 'size': (panel_width, panel_height_each), 'type': 'issues'},
         ]
         
         # 绘制各个面板
         for panel_config in panels:
-            x, y = panel_config['pos']
-            w, h = panel_config['size']
             panel_type = panel_config['type']
+            if panel_type not in show_set:
+                continue
             
-            # 创建子图
-            ax = self.fig.add_axes([x, start_y, w, h])
-            ax.set_xlim(0, 1)
-            ax.set_ylim(0, 1)
-            ax.axis('off')
+            # 复用现有axes或创建
+            if axes and panel_type in axes:
+                ax = axes[panel_type]
+                ax.clear()
+                ax.set_xlim(0, 1)
+                ax.set_ylim(0, 1)
+                ax.axis('off')
+            else:
+                x, y = panel_config['pos']
+                w, h = panel_config['size']
+                ax = self.fig.add_axes([x, start_y, w, h])
+                ax.set_xlim(0, 1)
+                ax.set_ylim(0, 1)
+                ax.axis('off')
             
-            # 绘制面板背景
-            bg_rect = Rectangle((0.02, 0.02), 0.96, 0.96, 
+            # 背景
+            bg_rect = Rectangle((0.02, 0.02), 0.96, 0.96,
                               facecolor=self.colors['panel_bg'],
                               edgecolor=self.colors['border'],
                               linewidth=1, alpha=0.9)
             ax.add_patch(bg_rect)
             
-            # 根据类型绘制相应面板
+            # 内容
             if panel_type == 'file_info':
                 self._draw_file_info_panel(ax, enhanced_info.file_basic_info)
             elif panel_type == 'codec_info':

@@ -6,7 +6,7 @@ Converts analysis results into clear PNG charts.
 import json
 import os
 from dataclasses import dataclass
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from datetime import datetime
 
 import matplotlib.pyplot as plt
@@ -16,6 +16,13 @@ import numpy as np
 from ..core.video_analyzer import VideoBitrateAnalysis
 from ..core.audio_analyzer import AudioBitrateAnalysis
 from ..core.fps_analyzer import FPSAnalysis
+from ..core.file_processor import VideoMetadata
+from ..core.enhanced_analysis import (
+    EnhancedAnalysisInfo,
+    create_enhanced_analysis_info,
+)
+from .chart_layouts import create_responsive_layout
+from .enhanced_panels import EnhancedPanelDrawer
 from ..utils.logger import get_logger
 
 
@@ -32,6 +39,12 @@ class ChartConfig:
     line_width: float = 2.0
     grid_alpha: float = 0.3
     font_size: int = 11
+
+    # Enhanced mode options
+    enhanced_mode: bool = False              # enable enhanced dashboard
+    info_level: str = "standard"             # basic | standard | detailed
+    show_panels: Optional[List[str]] = None  # ['file_info','codec_info','quality','issues']
+    panel_height_ratio: float = 0.4          # fraction of height for panels
 
 
 class ChartGenerator:
@@ -50,6 +63,56 @@ class ChartGenerator:
             'dropped': '#d62728',
             'average': '#ff0000'
         }
+
+    def generate_enhanced_chart(
+        self,
+        metadata: VideoMetadata,
+        video_analysis: VideoBitrateAnalysis,
+        audio_analysis: AudioBitrateAnalysis,
+        fps_analysis: FPSAnalysis,
+        config: ChartConfig
+    ) -> str:
+        """Generate enhanced dashboard chart with info panels.
+        Uses responsive GridSpec layout and panel drawers.
+        """
+        # Build enhanced info
+        enhanced_info: EnhancedAnalysisInfo = create_enhanced_analysis_info(
+            metadata, video_analysis, audio_analysis, fps_analysis
+        )
+        
+        # Create responsive layout (figure and axes)
+        fig, layout_info = create_responsive_layout(
+            enhanced_info, base_width=config.width, base_height=config.height
+        )
+        main_charts: Dict[str, Any] = layout_info['main_charts']
+        info_panels: Dict[str, Any] = layout_info['info_panels']
+
+        # Draw main charts using the same rendering logic as combined chart
+        from .main_chart_drawer import MainChartDrawer
+        drawer = MainChartDrawer()
+        drawer.line_width = config.line_width
+        drawer.grid_alpha = config.grid_alpha
+        drawer.font_size = config.font_size
+        drawer.draw_combined_charts(main_charts, video_analysis, audio_analysis, fps_analysis)
+
+        # Draw info panels
+        panel_drawer = EnhancedPanelDrawer(fig, panel_height_ratio=config.panel_height_ratio)
+        panel_drawer.draw_all_panels(
+            enhanced_info,
+            axes=info_panels,
+            show_panels=config.show_panels,
+            info_level=config.info_level
+        )
+
+        # Title override
+        if config.title:
+            fig.suptitle(config.title, fontsize=config.font_size + 4, fontweight='bold', y=0.98)
+
+        # Save
+        output_path = self._generate_filename("enhanced_dashboard", config)
+        plt.savefig(output_path, dpi=config.dpi, bbox_inches='tight')
+        plt.close(fig)
+        return output_path
     
     def generate_video_bitrate_chart(self, analysis: VideoBitrateAnalysis, 
                                    config: ChartConfig) -> str:
@@ -443,7 +506,11 @@ class ChartStyles:
             dpi=150,
             line_width=2.0,
             grid_alpha=0.3,
-            font_size=11
+            font_size=11,
+            enhanced_mode=False,
+            info_level='standard',
+            show_panels=['file_info','codec_info','quality','issues'],
+            panel_height_ratio=0.4
         )
     
     @staticmethod
@@ -455,7 +522,11 @@ class ChartStyles:
             dpi=300,
             line_width=2.5,
             grid_alpha=0.2,
-            font_size=12
+            font_size=12,
+            enhanced_mode=False,
+            info_level='standard',
+            show_panels=['file_info','codec_info','quality','issues'],
+            panel_height_ratio=0.4
         )
     
     @staticmethod
@@ -467,5 +538,20 @@ class ChartStyles:
             dpi=150,
             line_width=1.5,
             grid_alpha=0.3,
-            font_size=10
+            font_size=10,
+            enhanced_mode=False,
+            info_level='standard',
+            show_panels=['file_info','codec_info','quality','issues'],
+            panel_height_ratio=0.35
         )
+
+    @staticmethod
+    def get_enhanced_preset(info_level: str = 'standard') -> ChartConfig:
+        """Preset tailored for enhanced dashboard"""
+        cfg = ChartStyles.get_high_res_config()
+        cfg.enhanced_mode = True
+        cfg.info_level = info_level
+        cfg.width = max(cfg.width, 16)
+        cfg.height = max(cfg.height, 12)
+        cfg.panel_height_ratio = 0.4 if info_level != 'basic' else 0.35
+        return cfg
