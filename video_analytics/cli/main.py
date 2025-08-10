@@ -9,7 +9,6 @@ from rich.console import Console
 from ..utils.logger import setup_logging
 
 from .commands import (
-    info_command,
     check_command,
     analyze_command,
     chart_command,
@@ -25,9 +24,8 @@ app = typer.Typer(
 # Global console
 console = Console()
 
-# Core commands (simplified from 29 to 4)
-app.command("info", help="Show video file information (supports multiple files)")(info_command)
-app.command("analyze", help="Smart analysis with parallel processing (video+audio+fps)")(analyze_command)
+# Core commands (simplified from 29 to 3 + check)
+app.command("analyze", help="Smart analysis with file info + parallel processing (video+audio+fps)")(analyze_command)
 app.command("chart", help="Generate analysis charts (supports multiple files)")(chart_command)
 app.command("cache", help="Cache management (list|clear|info|remove <url>)")(cache_command)
 

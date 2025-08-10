@@ -1648,10 +1648,13 @@ def analyze_command(
     input_paths: List[str] = typer.Argument(..., help="Video file paths, HTTP URLs, or HLS stream URLs"),
     type_filter: str = typer.Option("all", "--type", "-t", help="Analysis types: video, audio, fps, all (comma-separated)"),
     output_dir: Optional[str] = typer.Option(None, "--output", "-o", help="Output directory for results"),
-    verbose: bool = typer.Option(False, "--verbose", "-v", help="Show verbose output")
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Show verbose output"),
+    info_only: bool = typer.Option(False, "--info-only", help="Show only file information (no analysis)")
 ):
     """
-    Run intelligent analysis on video files (default: parallel analysis of all types).
+    Run intelligent analysis on video files with detailed file information.
+    Shows basic file info + analysis results by default.
+    Use --info-only to show only metadata (replaces the info command).
     Supports single or multiple files, local paths, HTTP URLs, and HLS streams.
     """
     import asyncio
@@ -1693,6 +1696,14 @@ def analyze_command(
             
             # Get metadata for smart optimization
             metadata = processed_file.load_metadata()
+            
+            # Display detailed file information (merged from info command)
+            _display_file_info(metadata, input_path, len(input_paths), verbose)
+            
+            # If info-only mode, skip analysis
+            if info_only:
+                continue
+            
             config = create_fast_config(metadata.duration)
             
             # Configure analysis types
@@ -1787,8 +1798,13 @@ def analyze_command(
             failed_files.append(input_path)
     
     # Final summary
-    console.print(f"\n[bold green]Analysis Complete[/bold green]")
-    console.print(f"[green]Successful:[/green] {len(results)}/{len(input_paths)} files")
+    if info_only:
+        console.print(f"\n[bold green]File Information Complete[/bold green]")
+        successful_count = len(input_paths) - len(failed_files)
+        console.print(f"[green]Files processed:[/green] {successful_count}/{len(input_paths)}")
+    else:
+        console.print(f"\n[bold green]Analysis Complete[/bold green]")
+        console.print(f"[green]Successful:[/green] {len(results)}/{len(input_paths)} files")
     
     if failed_files:
         console.print(f"[red]Failed:[/red] {len(failed_files)} files")
@@ -1925,3 +1941,53 @@ def performance_test_command(
             console.print("[yellow]✓ Modest parallel improvement[/yellow]")
         else:
             console.print("[red]⚠ Parallel analysis may be slower than sequential[/red]")
+
+
+def _display_file_info(metadata, input_path: str, total_files: int, verbose: bool = False):
+    """
+    Display detailed file information (merged from info command).
+    """
+    import os
+    
+    # Create info table for this file
+    if total_files == 1:
+        table_title = "File Information"
+    else:
+        table_title = f"File Info: {os.path.basename(input_path)}"
+    
+    table = Table(title=table_title)
+    table.add_column("Property", style="cyan", no_wrap=True)
+    table.add_column("Value", style="magenta")
+    
+    # Basic information
+    table.add_row("File Path", metadata.file_path)
+    if metadata.original_url:
+        url_display = metadata.original_url
+        if len(url_display) > 80:
+            url_display = url_display[:77] + "..."
+        table.add_row("Original URL", url_display)
+        table.add_row("Cached", "Yes" if metadata.is_cached else "No")
+    table.add_row("File Size", f"{metadata.file_size / 1024 / 1024:.1f} MB")
+    table.add_row("Duration", f"{metadata.duration:.1f} s ({metadata.duration/60:.1f} min)")
+    table.add_row("Container Format", metadata.format_name)
+    table.add_row("Overall Bitrate", f"{metadata.bit_rate / 1000:.0f} kbps")
+    
+    # Video information
+    table.add_row("", "")  # spacer
+    table.add_row("[bold]Video[/bold]", "")
+    table.add_row("Codec", metadata.video_codec)
+    table.add_row("Resolution", f"{metadata.width}x{metadata.height}")
+    table.add_row("Frame Rate", f"{metadata.fps:.2f} fps")
+    if metadata.video_bitrate > 0:
+        table.add_row("Video Bitrate", f"{metadata.video_bitrate / 1000:.0f} kbps")
+    
+    # Audio information  
+    table.add_row("", "")  # spacer
+    table.add_row("[bold]Audio[/bold]", "")
+    table.add_row("Codec", metadata.audio_codec)
+    table.add_row("Channels", str(metadata.channels))
+    table.add_row("Sample Rate", f"{metadata.sample_rate} Hz")
+    if metadata.audio_bitrate > 0:
+        table.add_row("Audio Bitrate", f"{metadata.audio_bitrate / 1000:.0f} kbps")
+    
+    console.print(table)
