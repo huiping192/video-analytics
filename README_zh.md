@@ -86,8 +86,8 @@ python -m video_analytics cache clear
 python -m video_analytics analyze video1.mp4 video2.mp4 video3.mp4 --output ./batch_results
 
 # 不同图表类型
-python -m video_analytics chart video.mp4 --type combined    # 默认
-python -m video_analytics chart video.mp4 --type summary     # 仅关键指标
+python -m video_analytics chart video.mp4 --type combined    # 3子图视图（默认）
+python -m video_analytics chart video.mp4 --type summary     # 增强仪表板
 python -m video_analytics chart video.mp4 --type all         # 完整报告（5个图表）
 
 # URL和流媒体支持
@@ -122,10 +122,10 @@ python -m video_analytics info video.mp4 --verbose
 
 ## 📊 图表类型
 
-- **单独图表**：码率、音频和FPS分析的独立图表
-- **组合图表**：单一视图中的所有分析结果
-- **摘要图表**：包含关键指标的精简概览
-- **批量图表**：为多个文件一次性生成图表
+- **组合图表**：单一3子图视图中的所有分析结果
+- **摘要图表**：包含综合指标面板和质量评估的增强仪表板
+- **完整报告**：完整的独立分析图表集（共5个图表）
+- **批量图表**：为多个文件一次性生成图表并自动组织
 
 图表配置：
 - `default`：标准分辨率和样式
@@ -163,8 +163,8 @@ python -m video_analytics chart <file1> [file2] [file3]...
 - 使用智能默认值生成专业分析图表
 - **自动多文件组织**：批处理时创建子目录
 - **图表类型**：
-  - `--type combined` - 单一综合图表（默认）
-  - `--type summary` - 关键指标概览
+  - `--type combined` - 单一3子图综合图表（默认）
+  - `--type summary` - 包含质量面板和指标概览的增强仪表板
   - `--type all` - 完整报告含5个独立图表
 - **选项**：`--output <directory>`、`--verbose`
 

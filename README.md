@@ -86,8 +86,8 @@ python -m video_analytics cache clear
 python -m video_analytics analyze video1.mp4 video2.mp4 video3.mp4 --output ./batch_results
 
 # Different chart types
-python -m video_analytics chart video.mp4 --type combined    # Default
-python -m video_analytics chart video.mp4 --type summary     # Key metrics only
+python -m video_analytics chart video.mp4 --type combined    # 3-subplot view (default)
+python -m video_analytics chart video.mp4 --type summary     # Enhanced dashboard
 python -m video_analytics chart video.mp4 --type all         # Full report (5 charts)
 
 # URL and streaming support
@@ -122,10 +122,10 @@ python -m video_analytics info video.mp4 --verbose
 
 ## 📊 Chart Types
 
-- **Individual Charts**: Separate charts for bitrate, audio, and FPS analysis
-- **Combined Charts**: All analysis results in a single view
-- **Summary Charts**: Condensed overview with key metrics
-- **Batch Charts**: Generate charts for multiple files at once
+- **Combined Charts**: All analysis results in a single 3-subplot view
+- **Summary Charts**: Enhanced dashboard with comprehensive metrics, panels, and quality assessments
+- **Full Report**: Complete set of individual analysis charts (5 charts total)
+- **Batch Charts**: Generate charts for multiple files at once with automatic organization
 
 Chart configurations:
 - `default`: Standard resolution and styling
@@ -163,8 +163,8 @@ python -m video_analytics chart <file1> [file2] [file3]...
 - Generate professional analysis charts with smart defaults
 - **Automatic multi-file organization**: Creates subdirectories for batch processing
 - **Chart Types**:
-  - `--type combined` - Single comprehensive chart (default)
-  - `--type summary` - Key metrics overview  
+  - `--type combined` - Single 3-subplot comprehensive chart (default)
+  - `--type summary` - Enhanced dashboard with quality panels and metrics overview
   - `--type all` - Complete report with 5 individual charts
 - **Options**: `--output <directory>`, `--verbose`
 
