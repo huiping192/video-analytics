@@ -652,16 +652,8 @@ def batch_fps_command(
 def chart_command(
     input_paths: List[str] = typer.Argument(..., help="Video file paths, HTTP URLs, or HLS stream URLs"),
     output_dir: str = typer.Option("./charts", "--output", "-o", help="Charts output directory"),
-    chart_type: str = typer.Option("combined", "--type", "-t", help="Chart type: video, audio, fps, combined, summary, all"),
-    config_type: str = typer.Option("default", "--config", "-c", help="Chart config: default, high_res, compact"),
-    video_interval: float = typer.Option(30.0, "--video-interval", help="Video sampling interval (seconds)"),
-    audio_interval: float = typer.Option(15.0, "--audio-interval", help="Audio sampling interval (seconds)"),
-    fps_interval: float = typer.Option(10.0, "--fps-interval", help="FPS sampling interval (seconds)"),
-    enhanced: bool = typer.Option(False, "--enhanced", "--info-rich", help="Enable enhanced info-rich dashboard (requires video+audio+fps)"),
-    info_level: str = typer.Option("standard", "--info-level", help="Enhanced info richness: basic, standard, detailed"),
-    parallel: bool = typer.Option(True, "--parallel/--no-parallel", help="Use parallel analysis for better performance (default: enabled)"),
-    force_download: bool = typer.Option(False, "--force-download", help="Force re-download even if cached"),
-    max_workers: int = typer.Option(10, "--workers", help="Maximum download threads for HLS")
+    chart_type: str = typer.Option("combined", "--type", "-t", help="Chart type: combined, summary, all"),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Show verbose output")
 ):
     """
     Generate video analysis charts.
@@ -686,28 +678,25 @@ def chart_command(
                 failed_files.append(input_path)
                 continue
             
-            # Get metadata for optimization
+            # Get metadata for smart configuration optimization
             metadata = processed_file.load_metadata()
+            if verbose:
+                console.print(f"[dim]Duration: {metadata.duration:.1f}s ({metadata.duration/60:.1f} min)[/dim]")
             
-            # All chart types require all analyses for best results
-            need_video = True
-            need_audio = True  
-            need_fps = True
-            
-            # Run parallel analysis with smart configuration
+            # Run parallel analysis with smart configuration (all types enabled for best charts)
             import asyncio
             from ..core.parallel_analyzer import ParallelAnalysisEngine, create_fast_config
             
             config = create_fast_config(metadata.duration)
-            config.enable_video = need_video
-            config.enable_audio = need_audio
-            config.enable_fps = need_fps
+            config.enable_video = True  # Always enabled for charts
+            config.enable_audio = True  # Always enabled for charts  
+            config.enable_fps = True    # Always enabled for charts
             
             async def run_analysis():
                 engine = ParallelAnalysisEngine(config)
                 return await engine.analyze_all(processed_file)
             
-            with console.status(f"[bold green]Running analysis for charts..."):
+            with console.status(f"[bold green]Running parallel analysis..."):
                 combined_result = asyncio.run(run_analysis())
             
             video_analysis = combined_result.video_analysis
@@ -715,49 +704,60 @@ def chart_command(
             fps_analysis = combined_result.fps_analysis
             
             if verbose:
-                console.print(f"[green]Analysis completed in {combined_result.execution_time:.1f}s[/green]")
+                console.print(f"[green]✓ Analysis completed in {combined_result.execution_time:.1f}s[/green]")
+                console.print(f"[dim]  Video: {len(video_analysis.data_points) if video_analysis else 0} samples[/dim]")
+                console.print(f"[dim]  Audio: {len(audio_analysis.data_points) if audio_analysis else 0} samples[/dim]")
+                console.print(f"[dim]  FPS: {len(fps_analysis.data_points) if fps_analysis else 0} samples[/dim]")
             
-            # Create chart generator and config
+            # Create chart generator with smart defaults
+            from ..visualization.chart_generator import ChartGenerator, ChartStyles
+            
             chart_generator = ChartGenerator()
-            config = ChartStyles.get_default_config()
+            chart_config = ChartStyles.get_default_config()  # Use optimal defaults
             
             # Create subdirectory for each file if processing multiple files
             if len(input_paths) > 1:
                 file_basename = os.path.splitext(os.path.basename(input_path))[0]
                 file_output_dir = os.path.join(output_dir, file_basename)
                 os.makedirs(file_output_dir, exist_ok=True)
-                config.output_dir = file_output_dir
+                chart_config.output_dir = file_output_dir
             else:
-                config.output_dir = output_dir
+                chart_config.output_dir = output_dir
             
-            # Generate charts based on type
+            # Generate charts based on type (simplified logic with smart defaults)
             file_chart_paths = []
             
-            if chart_type == "combined" and all([video_analysis, audio_analysis, fps_analysis]):
-                config.title = f"Combined Analysis - {os.path.basename(input_path)}"
+            # Verify we have the required analysis data
+            if not all([video_analysis, audio_analysis, fps_analysis]):
+                console.print(f"[red]✗ Unable to generate charts: missing analysis data[/red]")
+                failed_files.append(input_path)
+                continue
+            
+            if chart_type == "combined":
+                chart_config.title = f"Combined Analysis - {os.path.basename(input_path)}"
                 chart_path = chart_generator.generate_combined_chart(
-                    video_analysis, audio_analysis, fps_analysis, config
+                    video_analysis, audio_analysis, fps_analysis, chart_config
                 )
                 file_chart_paths.append(chart_path)
                 console.print(f"  [green]✓[/green] Combined chart: {os.path.basename(chart_path)}")
                 
-            elif chart_type == "summary" and all([video_analysis, audio_analysis, fps_analysis]):
-                config.title = f"Analysis Summary - {os.path.basename(input_path)}"
+            elif chart_type == "summary":
+                chart_config.title = f"Analysis Summary - {os.path.basename(input_path)}"
                 chart_path = chart_generator.generate_summary_chart(
-                    video_analysis, audio_analysis, fps_analysis, config
+                    video_analysis, audio_analysis, fps_analysis, chart_config
                 )
                 file_chart_paths.append(chart_path)
                 console.print(f"  [green]✓[/green] Summary chart: {os.path.basename(chart_path)}")
                 
-            elif chart_type == "all" and all([video_analysis, audio_analysis, fps_analysis]):
+            elif chart_type == "all":
                 full_results = chart_generator.generate_full_report(
-                    video_analysis, audio_analysis, fps_analysis, config.output_dir
+                    video_analysis, audio_analysis, fps_analysis, chart_config.output_dir
                 )
                 file_chart_paths.extend(full_results.values())
                 console.print(f"  [green]✓[/green] Full report: {len(full_results)} charts")
             
             else:
-                console.print(f"[red]Unable to generate charts: missing analysis data[/red]")
+                console.print(f"[red]✗ Unknown chart type: {chart_type}[/red]")
                 failed_files.append(input_path)
                 continue
             
