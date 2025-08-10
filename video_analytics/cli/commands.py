@@ -652,7 +652,7 @@ def batch_fps_command(
 def chart_command(
     input_paths: List[str] = typer.Argument(..., help="Video file paths, HTTP URLs, or HLS stream URLs"),
     output_dir: str = typer.Option("./charts", "--output", "-o", help="Charts output directory"),
-    chart_type: str = typer.Option("combined", "--type", "-t", help="Chart type: combined, summary, all"),
+    chart_type: str = typer.Option("combined", "--type", "-t", help="Chart type: combined, summary, all, enhanced_dashboard"),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Show verbose output")
 ):
     """
@@ -755,6 +755,19 @@ def chart_command(
                 )
                 file_chart_paths.extend(full_results.values())
                 console.print(f"  [green]✓[/green] Full report: {len(full_results)} charts")
+                
+            elif chart_type == "enhanced_dashboard":
+                # Use enhanced preset configuration
+                from ..visualization.chart_generator import ChartStyles
+                enhanced_config = ChartStyles.get_enhanced_preset(info_level='standard')
+                enhanced_config.output_dir = chart_config.output_dir
+                enhanced_config.title = f"Enhanced Dashboard - {os.path.basename(input_path)}"
+                
+                chart_path = chart_generator.generate_enhanced_chart(
+                    metadata, video_analysis, audio_analysis, fps_analysis, enhanced_config
+                )
+                file_chart_paths.append(chart_path)
+                console.print(f"  [green]✓[/green] Enhanced dashboard: {os.path.basename(chart_path)}")
             
             else:
                 console.print(f"[red]✗ Unknown chart type: {chart_type}[/red]")
@@ -790,7 +803,7 @@ def chart_command(
 def batch_chart_command(
     files: List[str] = typer.Argument(..., help="List of video files to analyze"),
     output_dir: str = typer.Option("./batch_charts", "--output", "-o", help="Charts output directory"),
-    chart_type: str = typer.Option("combined", "--type", "-t", help="Chart type: combined, summary, all"),
+    chart_type: str = typer.Option("combined", "--type", "-t", help="Chart type: combined, summary, all, enhanced_dashboard"),
     config_type: str = typer.Option("default", "--config", "-c", help="Chart config: default, high_res, compact")
 ):
     """
@@ -874,6 +887,22 @@ def batch_chart_command(
                     )
                     console.print(f"  ✓ Full report: {len(results)} charts")
                     total_charts += len(results)
+                    
+                elif chart_type == "enhanced_dashboard":
+                    # Get metadata for enhanced dashboard
+                    metadata = processed_file.load_metadata()
+                    
+                    # Use enhanced preset configuration
+                    from ..visualization.chart_generator import ChartStyles
+                    enhanced_config = ChartStyles.get_enhanced_preset(info_level='standard')
+                    enhanced_config.output_dir = file_output_dir
+                    enhanced_config.title = f"Enhanced Dashboard - {file_basename}"
+                    
+                    chart_path = chart_generator.generate_enhanced_chart(
+                        metadata, video_analysis, audio_analysis, fps_analysis, enhanced_config
+                    )
+                    console.print(f"  ✓ Enhanced dashboard: {chart_path}")
+                    total_charts += 1
                 
                 success_count += 1
                 
