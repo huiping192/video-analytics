@@ -64,7 +64,7 @@ class ChartLayoutManager:
         main_charts_gs = gridspec.GridSpecFromSubplotSpec(
             3, 1,  # 3 rows, 1 column
             main_gs[0, 0],  # In the first row of main grid
-            hspace=0.3,  # Spacing between subplots
+            hspace=0.45,  # Increase spacing between subplots to avoid title overlap
         )
         
         # Create 3 main chart subplots

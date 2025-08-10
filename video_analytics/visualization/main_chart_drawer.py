@@ -81,10 +81,70 @@ class MainChartDrawer:
                   alpha=0.7,
                   linewidth=1.5,
                   label=f'Average ({avg_bitrate:.1f} Mbps)')
+
+        # Threshold lines (±30% from average)
+        upper_threshold = avg_bitrate * 1.3
+        lower_threshold = max(0, avg_bitrate * 0.7)
+        ax.axhline(y=upper_threshold, color='#888888', linestyle=':', linewidth=1.0, alpha=0.9, label='Upper threshold')
+        ax.axhline(y=lower_threshold, color='#888888', linestyle=':', linewidth=1.0, alpha=0.9, label='Lower threshold')
+
+        # Highlight anomaly regions where bitrate beyond thresholds
+        labeled_anomaly = False
+        half_window = max(0.25, (video_analysis.sample_interval / 60) / 2)
+        for i, rate in enumerate(video_rates):
+            if rate > upper_threshold or rate < lower_threshold:
+                center = video_times[i]
+                start_x = max(0, center - half_window)
+                end_x = center + half_window
+                ax.axvspan(
+                    start_x, end_x,
+                    color='#fde725', alpha=0.18,
+                    label='Bitrate anomaly' if not labeled_anomaly else None
+                )
+                labeled_anomaly = True
+
+        # Annotate top peak points (up to 3)
+        try:
+            import numpy as np
+            if len(video_rates) >= 3:
+                # Simple local maxima detection
+                local_max_indices = [
+                    i for i in range(1, len(video_rates) - 1)
+                    if video_rates[i] > video_rates[i - 1] and video_rates[i] > video_rates[i + 1]
+                ]
+                # Fallback: include global max if no local peaks
+                if not local_max_indices:
+                    local_max_indices = [int(np.argmax(video_rates))]
+                # Pick top 3 peaks by value
+                top_indices = sorted(local_max_indices, key=lambda idx: video_rates[idx], reverse=True)[:3]
+                for idx in top_indices:
+                    x = video_times[idx]
+                    y = video_rates[idx]
+                    ax.scatter([x], [y], color='#8e44ad', s=30, zorder=6, label=None)
+                    ax.annotate(
+                        f"Peak {y:.1f} Mbps",
+                        xy=(x, y), xytext=(5, 8), textcoords='offset points',
+                        fontsize=self.font_size - 1, color='#4a235a',
+                        bbox=dict(boxstyle='round,pad=0.2', fc='white', alpha=0.7),
+                        arrowprops=dict(arrowstyle='->', color='#4a235a', lw=0.6)
+                    )
+        except Exception:
+            # Safe ignore annotation errors
+            pass
         
+        # Adjust y-limits to add headroom to avoid title/annotations overlap
+        try:
+            y_candidates = video_rates + [avg_bitrate, upper_threshold]
+            if y_candidates:
+                ymax = max(y_candidates)
+                ymin = min(video_rates) if video_rates else 0
+                ax.set_ylim(bottom=max(0, ymin * 0.95), top=ymax * 1.15)
+        except Exception:
+            pass
+
         # Styling
         ax.set_ylabel('Video Bitrate (Mbps)', fontsize=self.font_size)
-        ax.set_title('Video Bitrate Changes', fontsize=self.font_size, fontweight='bold')
+        ax.set_title('Video Bitrate Changes', fontsize=self.font_size + 1, fontweight='bold', pad=16)
         ax.grid(True, alpha=self.grid_alpha)
         ax.legend(loc='upper right')
     
@@ -109,10 +169,43 @@ class MainChartDrawer:
                   alpha=0.7,
                   linewidth=1.5,
                   label=f'Average ({avg_bitrate:.0f} kbps)')
+
+        # Annotate up to 2 peak points for audio
+        try:
+            if len(audio_rates) >= 3:
+                peak_indices = [
+                    i for i in range(1, len(audio_rates) - 1)
+                    if audio_rates[i] > audio_rates[i - 1] and audio_rates[i] > audio_rates[i + 1]
+                ]
+                if not peak_indices:
+                    import numpy as np
+                    peak_indices = [int(np.argmax(audio_rates))]
+                for idx in sorted(peak_indices, key=lambda i: audio_rates[i], reverse=True)[:2]:
+                    x = audio_times[idx]
+                    y = audio_rates[idx]
+                    ax.scatter([x], [y], color='#8e44ad', s=25, zorder=6, label=None)
+                    ax.annotate(
+                        f"Peak {y:.0f} kbps",
+                        xy=(x, y), xytext=(5, 6), textcoords='offset points',
+                        fontsize=self.font_size - 2, color='#4a235a',
+                        bbox=dict(boxstyle='round,pad=0.2', fc='white', alpha=0.7)
+                    )
+        except Exception:
+            pass
         
+        # Adjust y-limits to add headroom
+        try:
+            y_candidates = audio_rates + [avg_bitrate]
+            if y_candidates:
+                ymax = max(y_candidates)
+                ymin = min(audio_rates) if audio_rates else 0
+                ax.set_ylim(bottom=max(0, ymin * 0.95), top=ymax * 1.15)
+        except Exception:
+            pass
+
         # Styling
         ax.set_ylabel('Audio Bitrate (kbps)', fontsize=self.font_size)
-        ax.set_title('Audio Bitrate Changes', fontsize=self.font_size, fontweight='bold')
+        ax.set_title('Audio Bitrate Changes', fontsize=self.font_size + 1, fontweight='bold', pad=16)
         ax.grid(True, alpha=self.grid_alpha)
         ax.legend(loc='upper right')
     
@@ -145,10 +238,61 @@ class MainChartDrawer:
                   alpha=0.7,
                   linewidth=1.5,
                   label=f'Declared FPS ({fps_analysis.declared_fps:.1f} fps)')
+
+        # Actual average FPS line
+        if fps_values:
+            actual_avg = sum(fps_values) / len(fps_values)
+            ax.axhline(y=actual_avg, color='#888888', linestyle=':', linewidth=1.0, alpha=0.9, label=f'Actual Avg ({actual_avg:.1f} fps)')
+
+        # Highlight severe drop regions and annotate worst drop
+        labeled_region = False
+        worst_drop_idx = None
+        worst_drop_count = -1
+        half_window = max(0.25, (fps_analysis.sample_interval / 60) / 2)
+        expected_frames_per_window = max(1.0, fps_analysis.declared_fps * fps_analysis.sample_interval)
+        for i, dp in enumerate(fps_analysis.data_points):
+            if dp.dropped_frames > 0:
+                drop_ratio = dp.dropped_frames / expected_frames_per_window
+                if drop_ratio >= 0.05:  # >=5% considered severe region
+                    center = fps_times[i]
+                    ax.axvspan(
+                        max(0, center - half_window), center + half_window,
+                        color='#ff4d4f', alpha=0.12,
+                        label='Severe drop region' if not labeled_region else None
+                    )
+                    labeled_region = True
+                if dp.dropped_frames > worst_drop_count:
+                    worst_drop_count = dp.dropped_frames
+                    worst_drop_idx = i
+
+        if worst_drop_idx is not None and worst_drop_count > 0:
+            x = fps_times[worst_drop_idx]
+            y = fps_values[worst_drop_idx]
+            ax.annotate(
+                f"Severe drop: {worst_drop_count} frames",
+                xy=(x, y), xytext=(6, -12), textcoords='offset points',
+                fontsize=self.font_size - 1, color=self.colors['dropped'],
+                bbox=dict(boxstyle='round,pad=0.2', fc='white', alpha=0.7),
+                arrowprops=dict(arrowstyle='->', color=self.colors['dropped'], lw=0.6)
+            )
         
+        # Adjust y-limits to add headroom
+        try:
+            y_candidates = fps_values + [fps_analysis.declared_fps]
+            try:
+                y_candidates.append(actual_avg)
+            except Exception:
+                pass
+            if y_candidates:
+                ymax = max(y_candidates)
+                ymin = min(fps_values) if fps_values else 0
+                ax.set_ylim(bottom=max(0, ymin * 0.95), top=ymax * 1.15)
+        except Exception:
+            pass
+
         # Styling
         ax.set_ylabel('FPS', fontsize=self.font_size)
         ax.set_xlabel('Time (minutes)', fontsize=self.font_size)
-        ax.set_title('FPS Changes', fontsize=self.font_size, fontweight='bold')
+        ax.set_title('FPS Changes', fontsize=self.font_size + 1, fontweight='bold', pad=16)
         ax.grid(True, alpha=self.grid_alpha)
         ax.legend(loc='upper right')
