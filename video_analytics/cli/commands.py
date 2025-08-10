@@ -1712,18 +1712,30 @@ def analyze_command(
             # Display results summary
             console.print(f"[green]✓ Analysis completed in {result.execution_time:.1f}s[/green]")
             
-            # Show key metrics
-            if result.has_video_analysis and verbose:
-                video = result.video_analysis
-                console.print(f"  Video: {video.average_bitrate/1000000:.1f} Mbps ({video.encoding_type})")
+            # Show key metrics (now displayed by default)
+            results_displayed = False
             
-            if result.has_audio_analysis and verbose:
+            if result.has_video_analysis:
+                video = result.video_analysis
+                if verbose:
+                    encoding_detail = video.encoding_type  # Full detail (e.g., "VBR (Variable Bitrate) - CV: 14.4%")
+                else:
+                    encoding_detail = video.encoding_type.split()[0]  # Just "VBR" or "CBR"
+                console.print(f"  Video: {video.average_bitrate/1000000:.1f} Mbps ({encoding_detail})")
+                results_displayed = True
+            
+            if result.has_audio_analysis:
                 audio = result.audio_analysis
                 console.print(f"  Audio: {audio.average_bitrate/1000:.0f} kbps ({audio.quality_level})")
+                results_displayed = True
             
-            if result.has_fps_analysis and verbose:
+            if result.has_fps_analysis:
                 fps = result.fps_analysis
                 console.print(f"  FPS: {fps.actual_average_fps:.1f} fps ({fps.total_dropped_frames} drops)")
+                results_displayed = True
+            
+            if not results_displayed:
+                console.print("  [yellow]No analysis results available[/yellow]")
             
             # Export data if output directory specified
             if output_dir:
