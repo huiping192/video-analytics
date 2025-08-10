@@ -230,11 +230,29 @@ class ProcessedFile:
             return False
     
     def _parse_fps(self, video_stream: dict) -> float:
-        """Parse FPS value"""
+        """Parse FPS value with fallback and validation"""
+        # Try avg_frame_rate first (more accurate for VFR content)
+        avg_fps_str = video_stream.get('avg_frame_rate', '')
+        if avg_fps_str and avg_fps_str != '0/0':
+            try:
+                num, den = avg_fps_str.split('/')
+                avg_fps = float(num) / float(den) if float(den) != 0 else 0.0
+                # Validate reasonable range (0.1 to 240 fps)
+                if 0.1 <= avg_fps <= 240:
+                    return avg_fps
+            except:
+                pass
+        
+        # Fallback to r_frame_rate
         fps_str = video_stream.get('r_frame_rate', '0/1')
         try:
             num, den = fps_str.split('/')
-            return float(num) / float(den) if float(den) != 0 else 0.0
+            fps = float(num) / float(den) if float(den) != 0 else 0.0
+            # Validate reasonable range (0.1 to 240 fps)
+            if 0.1 <= fps <= 240:
+                return fps
+            else:
+                return 0.0  # Invalid fps, return 0
         except:
             return 0.0
 
