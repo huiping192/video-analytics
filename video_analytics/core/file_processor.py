@@ -75,10 +75,18 @@ class ProcessedFile:
                 elif stream['codec_type'] == 'audio' and audio_stream is None:
                     audio_stream = stream
             
+            # Get file size from filesystem if not available in format info
+            file_size = int(format_info.get('size', 0))
+            if file_size == 0:
+                try:
+                    file_size = os.path.getsize(self.file_path)
+                except:
+                    file_size = 0
+            
             return VideoMetadata(
                 file_path=self.file_path,
                 duration=float(format_info.get('duration', 0)),
-                file_size=int(format_info.get('size', 0)),
+                file_size=file_size,
                 format_name=format_info.get('format_name', 'unknown'),
                 bit_rate=int(format_info.get('bit_rate', 0)),
                 
@@ -92,7 +100,7 @@ class ProcessedFile:
                 # Audio stream info
                 audio_codec=audio_stream['codec_name'] if audio_stream else '',
                 channels=audio_stream.get('channels', 0) if audio_stream else 0,
-                sample_rate=audio_stream.get('sample_rate', 0) if audio_stream else 0,
+                sample_rate=int(audio_stream.get('sample_rate', 0)) if audio_stream else 0,
                 audio_bitrate=int(audio_stream.get('bit_rate', 0)) if audio_stream else 0,
                 
                 # Source info
@@ -139,7 +147,7 @@ class ProcessedFile:
                             # Audio stream info
                             audio_codec=audio_stream['codec_name'] if audio_stream else '',
                             channels=audio_stream.get('channels', 0) if audio_stream else 0,
-                            sample_rate=audio_stream.get('sample_rate', 0) if audio_stream else 0,
+                            sample_rate=int(audio_stream.get('sample_rate', 0)) if audio_stream else 0,
                             audio_bitrate=int(audio_stream.get('bit_rate', 0)) if audio_stream else 0,
                             
                             # Source info
