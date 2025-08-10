@@ -4,35 +4,32 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is a **fully implemented** Python-based command-line video analysis tool with comprehensive CLI architecture.
+This is a **professional video chart generator** - specialized tool for creating high-quality video analysis charts.
 
-**CURRENT STATUS: SIMPLIFIED CLI IMPLEMENTATION** - The project features a dramatically simplified CLI interface from 29 commands to 4 core commands, with intelligent defaults and automatic parallel processing.
+**CURRENT STATUS: ULTRA-SIMPLIFIED CLI** - Dramatically simplified from 29 commands to 1 single command, with intelligent defaults and zero configuration required.
 
-**Implemented functionality:**
-- **Unified analyze command** - Intelligent parallel analysis (video+audio+fps) with smart defaults
-- **Multi-file support** - All commands support single or multiple files seamlessly
-- **Automatic optimization** - Smart sampling intervals based on file type and duration
-- **Simplified cache management** - Single cache command with list/clear/info/remove operations
-- **Zero-configuration use** - Works out of the box with optimal settings
-- Rich CLI interface with colored output and progress indicators
-- Chart generation with automatic chart type selection
-- JSON/CSV data export functionality
-- FFmpeg dependency checking and validation
-- **Performance-optimized by default** - Parallel processing enabled automatically
+**Core functionality:**
+- **Single command operation** - One command does everything: analyze + generate charts
+- **Smart defaults** - Auto-detects best settings based on video characteristics
+- **Universal input support** - Local files, HTTP URLs, HLS streams
+- **Intelligent chart selection** - Detailed charts for short videos, combined for longer ones
+- **Automatic parallel processing** - Video + audio + fps analysis in parallel
+- **Zero configuration** - Works perfectly out of the box
+- **Professional visualization** - High-quality charts with optimal layouts
+- **Batch processing** - Multiple files processed automatically
 
-## CLI Architecture
+## CLI Architecture (Ultra-Simplified)
 
-**Entry Points:**
-- Primary: `python -m video_analytics` → `video_analytics/__main__.py` → `video_analytics/cli/main.py`
-- Legacy: `video_analytics/main.py` (backwards compatibility)
-- Console script: `video-analytics` command (from setup.py)
+**Entry Point:** `python -m video_analytics <files...>` - Single command, zero configuration
 
-**CLI Structure (Simplified):**
+**CLI Structure:**
 ```
 video_analytics/cli/
-├── main.py       # Typer app setup with 4 core commands
-└── commands.py   # Simplified command implementations (info, analyze, chart, cache)
+├── main.py       # Single command registration (~25 lines)
+└── commands.py   # One core function (~200 lines, was 1992 lines)
 ```
+
+**Core philosophy:** Complement ffprobe - ffprobe shows info, we generate professional charts.
 
 ## Development Commands
 
@@ -42,67 +39,51 @@ pip install -e .                 # Development install
 pip install -r requirements.txt  # Install dependencies only
 ```
 
-**Running the Simplified CLI:**
+**Running the Ultra-Simplified CLI:**
 ```bash
-python -m video_analytics --help                    # Main help (now shows 4 core commands)
-python -m video_analytics check                     # Check FFmpeg dependencies
-python main.py --help                               # Alternative entry point
-video-analytics --help                              # If installed globally
+python -m video_analytics --help                    # Show help (single command)
+python -m video_analytics <file1> [file2]...        # Generate charts (default)
+video-analytics <file1> [file2]...                  # If installed globally
 ```
 
-**Simplified Analysis Commands (4 Core Commands):**
+**Single Command Usage:**
 ```bash
-# 1. File information (supports multiple files)
-python -m video_analytics info <file1> [file2] [file3]...        # Show video metadata for one or more files
-python -m video_analytics info <file> --verbose                  # Show detailed information
+# Basic usage - auto analysis + auto charts
+python -m video_analytics video.mp4                              # Local file
+python -m video_analytics https://example.com/video.mp4          # HTTP URL  
+python -m video_analytics https://stream.example.com/live.m3u8   # HLS stream
+python -m video_analytics file1.mp4 file2.mp4 file3.mp4         # Multiple files (auto batch)
 
-# 2. Smart analysis (replaces all individual and batch analysis commands)
-python -m video_analytics analyze <file1> [file2] [file3]...     # Parallel analysis (video+audio+fps)
-python -m video_analytics analyze <file> --type video,audio      # Select specific analysis types
-python -m video_analytics analyze <file> --output ./results      # Export results to directory
-python -m video_analytics analyze <file> --verbose               # Show detailed progress
+# Optional parameters (only 2)
+python -m video_analytics video.mp4 --output ./my-charts         # Custom output directory
+python -m video_analytics video.mp4 --verbose                    # Detailed progress
 
-# Examples with different input types (all commands support these):
-python -m video_analytics analyze /path/to/video.mp4                    # Local file
-python -m video_analytics analyze https://example.com/video.mp4         # HTTP URL
-python -m video_analytics analyze https://stream.example.com/live.m3u8  # HLS stream
-python -m video_analytics analyze file1.mp4 file2.mp4 file3.mp4        # Multiple files (automatic batch)
-
-# 3. Chart generation (supports multiple files)
-python -m video_analytics chart <file1> [file2] [file3]...       # Generate charts for one or more files
-python -m video_analytics chart <file> --type combined           # Combined analysis chart
-python -m video_analytics chart <file> --type summary            # Summary chart
-python -m video_analytics chart <file> --type all                # Full report
-
-
-# 4. Cache management (unified operations)
-python -m video_analytics cache list               # List cached downloads
-python -m video_analytics cache info               # Show cache statistics
-python -m video_analytics cache clear              # Clear all cache
-python -m video_analytics cache remove <url>       # Remove specific cached file
+# Examples of smart behavior
+python -m video_analytics short_clip.mp4        # → Detailed charts (< 5 min)
+python -m video_analytics movie.mp4             # → Combined charts (> 5 min) 
+python -m video_analytics *.mp4                 # → Batch process all MP4s
 ```
 
-**Key Improvements:**
-- **29 commands → 4 commands**: Massive simplification (-86% complexity)
-- **Automatic batch processing**: Multi-file support built into all commands
-- **Parallel by default**: No need for separate parallel commands
-- **Smart defaults**: Optimal settings automatically chosen
-- **Zero configuration**: Works perfectly out of the box
+**Radical Simplification:**
+- **29 commands → 1 command**: Ultimate simplification (-97% complexity reduction)
+- **1992 lines → 199 lines**: 90% code reduction in commands.py
+- **Zero learning curve**: One command does everything
+- **Intelligent automation**: Best practices built-in as defaults
 
-**Simplified Options (3 Core Parameters):**
+**Ultra-Simple Options (Only 2):**
 ```bash
---type video,audio,fps   # Select analysis types (default: all)
---output ./path          # Output directory (default: smart location)
+--output ./path          # Output directory (default: ./charts)
 --verbose               # Show detailed information (default: concise)
 ```
 
-**Smart Defaults (No Configuration Needed):**
-- **Parallel processing**: Always enabled, auto-optimized
-- **Sampling intervals**: Automatically optimized based on file type and duration
-- **Batch processing**: Automatic when multiple files provided
-- **Download caching**: Intelligent caching for HTTP/HLS streams
-- **Output formats**: JSON export available with --output
-- **Chart configuration**: Optimal settings automatically applied
+**Completely Automated Behavior:**
+- **Analysis type selection**: Always runs video+audio+fps (best charts)
+- **Chart type selection**: Auto-selected based on video duration
+- **Parallel processing**: Always enabled with optimal worker counts
+- **Sampling intervals**: Auto-optimized for video length and memory
+- **Batch processing**: Automatic for multiple files
+- **Download caching**: Transparent for HTTP/HLS streams
+- **Directory structure**: Smart organization for multi-file processing
 
 ## Technology Stack (Implemented)
 
@@ -183,17 +164,17 @@ When working with the simplified CLI:
 
 ## Development Workflow
 
-**No formal tests** - The project currently has no test files. Quality assurance relies on:
-- **Validation commands**: Built-in file validation and dependency checking
-- **Error handling**: Comprehensive exception handling throughout the codebase
-- **Simple mode**: Fallback processing mode when FFmpeg is not available
+**Simplified testing** - With the ultra-simplified CLI, testing is now straightforward:
+- **Single command testing**: Only one main function to test
+- **Built-in validation**: Automatic dependency checking and error handling  
+- **Real-world testing**: Test with actual video files to verify end-to-end functionality
 
-**Manual testing commands:**
+**Testing commands:**
 ```bash
-python -m video_analytics check                     # Verify dependencies
-python -m video_analytics validate <test_file>      # Test file processing
-python -m video_analytics info <test_file> --simple # Test simple mode
-python -m video_analytics performance_test <file>   # Performance and stress testing
+python -m video_analytics --help                    # Verify CLI works
+python -m video_analytics test_video2.mp4           # Test single file processing
+python -m video_analytics test_video2.mp4 --verbose # Test with detailed output
+python -m video_analytics *.mp4 --output ./test     # Test batch processing
 ```
 
 ## Critical Dependencies and Requirements
@@ -204,9 +185,9 @@ python -m video_analytics performance_test <file>   # Performance and stress tes
 - **Disk space**: Chart generation and export files require adequate storage
 
 **Dependency validation:**
-- Use `python -m video_analytics check` to verify all dependencies
-- FFmpeg installation is checked at runtime with version detection
-- Python package dependencies are handled via requirements.txt
+- FFmpeg automatically checked at startup - no separate command needed
+- Clear error messages with installation instructions if FFmpeg missing
+- Python package dependencies handled via requirements.txt
 
 ## Parallel Analysis Architecture
 

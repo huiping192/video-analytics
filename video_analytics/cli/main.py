@@ -9,14 +9,11 @@ from rich.console import Console
 from ..utils.logger import setup_logging
 
 from .commands import (
-    check_command,
-    analyze_command,
-    chart_command,
-    cache_command
+    generate_command
 )
 
 app = typer.Typer(
-    help="Video analytics tool - intelligent analysis with smart defaults",
+    help="Professional video chart generator - one command, smart defaults",
     add_completion=False,
     no_args_is_help=True
 )
@@ -24,13 +21,8 @@ app = typer.Typer(
 # Global console
 console = Console()
 
-# Core commands (simplified from 29 to 3 + check)
-app.command("analyze", help="Smart analysis with file info + parallel processing (video+audio+fps)")(analyze_command)
-app.command("chart", help="Generate analysis charts (supports multiple files)")(chart_command)
-app.command("cache", help="Cache management (list|clear|info|remove <url>)")(cache_command)
-
-# System dependency check
-app.command("check", help="Check system dependencies")(check_command)
+# Single main command - auto-analysis + auto-chart generation
+app.command()(generate_command)
 
 
 def main():

@@ -1,35 +1,40 @@
-# Video Analytics
+# Video Chart Generator
 
 [中文版 README](README_zh.md)
 
-A powerful Python-based command-line video analysis tool with **dramatically simplified CLI architecture** - from 29 commands to just **4 core commands** with intelligent defaults and zero-configuration usage.
+**Professional video analysis chart generator** - Generate high-quality charts for video bitrate, audio quality, and frame rate analysis with a single command.
 
-## 🚀 Features
+**Ultra-simplified design:** From 29 complex commands to 1 command, zero configuration, intelligent automation.
 
-### **🎯 Simplified CLI Architecture**
-- **4 Core Commands**: `info`, `analyze`, `chart`, `cache` - everything you need
-- **Zero Configuration**: Works perfectly out of the box with smart defaults
-- **Intelligent Multi-file Support**: Built-in batch processing for all commands
-- **Automatic Parallel Processing**: 3x faster analysis with no manual configuration
+---
 
-### **🔍 Comprehensive Analysis**
-- **Unified Analysis**: Video bitrate, audio quality, and FPS analysis in one command
-- **Smart Sampling**: Auto-optimized intervals based on video duration and type
-- **URL Support**: Analyze local files, HTTP URLs, and HLS streams seamlessly
-- **Performance Optimized**: Handles 3+ hour videos efficiently
+## 🚀 Key Features
 
-### **📊 Rich Visualization & Export**
-- **Automatic Chart Generation**: Combined analysis, summaries, and full reports
-- **Beautiful CLI Interface**: Colored output with real-time progress indicators
-- **Data Export**: JSON/CSV export for external analysis
-- **FFmpeg Integration**: Robust dependency checking and validation
+### **🎯 One Command Does Everything**  
+- **Single command** - No complex parameter choices, automatically completes analysis + chart generation
+- **Smart defaults** - Auto-selects optimal analysis and chart types based on video duration  
+- **Zero configuration** - Works out of the box, no setup or learning curve required
+- **Batch processing** - Supports multiple files and wildcards like `*.mp4`
+
+### **📊 Professional Chart Visualization**
+- **Intelligent chart selection** - Detailed charts for short videos, optimized charts for longer ones
+- **Parallel analysis** - Simultaneously analyzes video bitrate, audio quality, frame rate (3x speed boost)
+- **High-quality output** - Professional chart layouts and visual effects
+- **Multiple input sources** - Supports local files, HTTP URLs, HLS streams
+
+### **🔍 Perfect Ecosystem Integration**
+- **Complements ffprobe** - ffprobe shows information, we generate professional charts
+- **Focused core value** - No wheel reinventing, specialized in chart visualization  
+- **Lightweight & efficient** - 90% code reduction, fewer bugs, easier maintenance
+
+---
 
 ## 🛠 Installation
 
 ### Prerequisites
 
 - **Python 3.8+**
-- **FFmpeg** (required for full functionality)
+- **FFmpeg** (required for functionality)
   - Install from [https://ffmpeg.org/download.html](https://ffmpeg.org/download.html)
   - Or use package managers: `brew install ffmpeg` (macOS), `apt install ffmpeg` (Ubuntu)
 
@@ -50,308 +55,219 @@ pip install -r requirements.txt
 ### Verify Installation
 
 ```bash
-# Check FFmpeg and dependencies
-python -m video_analytics check
-
-# Show help
+# Show help (automatically checks FFmpeg dependencies)
 python -m video_analytics --help
 ```
 
-## 🎯 Quick Start
+---
 
-### **🚀 Basic Usage (4 Core Commands)**
+## 🎯 Usage
 
-```bash
-# 1. Show video information (supports multiple files)
-python -m video_analytics info video.mp4
-python -m video_analytics info video1.mp4 video2.mp4 video3.mp4
-
-# 2. Comprehensive analysis (video+audio+fps in parallel)  
-python -m video_analytics analyze video.mp4
-python -m video_analytics analyze video.mp4 --output ./results --verbose
-
-# 3. Generate analysis charts
-python -m video_analytics chart video.mp4
-python -m video_analytics chart video.mp4 --type summary --output ./charts
-
-# 4. Cache management
-python -m video_analytics cache list
-python -m video_analytics cache clear
-```
-
-### **⚡ Advanced Usage**
+### **🚀 Ultra-Simple Usage (One Command Does Everything)**
 
 ```bash
-# Multi-file batch processing (automatic)
-python -m video_analytics analyze video1.mp4 video2.mp4 video3.mp4 --output ./batch_results
+# Basic usage - auto analysis + auto chart generation
+python -m video_analytics video.mp4
 
-# Different chart types
-python -m video_analytics chart video.mp4 --type combined    # 3-subplot view (default)
-python -m video_analytics chart video.mp4 --type summary     # Enhanced dashboard
-python -m video_analytics chart video.mp4 --type all         # Full report (5 charts)
+# Batch processing multiple files  
+python -m video_analytics video1.mp4 video2.mp4 video3.mp4
+python -m video_analytics *.mp4
 
-# URL and streaming support
-python -m video_analytics analyze https://example.com/video.mp4
-python -m video_analytics analyze https://stream.example.com/playlist.m3u8
-
-# Verbose output for detailed information
-python -m video_analytics analyze video.mp4 --verbose
-python -m video_analytics chart video.mp4 --verbose
+# Support HTTP URLs and HLS streams
+python -m video_analytics https://example.com/video.mp4
+python -m video_analytics https://stream.example.com/playlist.m3u8
 ```
 
-## 🔧 Configuration
+### **⚡ Optional Parameters (Only 2)**
 
-**Zero-configuration by default** - the tool works perfectly out of the box with intelligent defaults!
-
-### **📁 Smart Defaults**
-- **Auto-optimized sampling intervals** based on video duration and type
-- **Parallel processing** enabled automatically for maximum performance  
-- **Intelligent output directories** with automatic organization for multi-file processing
-- **Optimal chart configurations** selected automatically
-
-### **🛠 Optional Customization**
 ```bash
-# Custom output directory (applies to all commands)
-python -m video_analytics analyze video.mp4 --output ./custom_results
-python -m video_analytics chart video.mp4 --output ./custom_charts
+# Specify output directory
+python -m video_analytics video.mp4 --output ./my-charts
 
-# Verbose mode for detailed information
-python -m video_analytics analyze video.mp4 --verbose
-python -m video_analytics info video.mp4 --verbose
+# Verbose mode (show analysis process and metrics)
+python -m video_analytics video.mp4 --verbose
+
+# Combine both options
+python -m video_analytics video.mp4 --output ./charts --verbose
 ```
 
-## 📊 Chart Types
+### **🧠 Smart Behavior Examples**
 
-- **Combined Charts**: All analysis results in a single 3-subplot view
-- **Summary Charts**: Enhanced dashboard with comprehensive metrics, panels, and quality assessments
-- **Full Report**: Complete set of individual analysis charts (5 charts total)
-- **Batch Charts**: Generate charts for multiple files at once with automatic organization
+```bash
+# Short videos (< 5 minutes) → Auto-generate detailed charts
+python -m video_analytics short_clip.mp4        
 
-Chart configurations:
-- `default`: Standard resolution and styling
-- `high_res`: High-resolution charts suitable for presentations
-- `compact`: Minimalist charts for quick overview
+# Long videos (≥ 5 minutes) → Auto-generate optimized charts  
+python -m video_analytics movie.mp4             
+
+# Multiple files → Auto-create subdirectory structure
+python -m video_analytics file1.mp4 file2.mp4  
+# Output: ./charts/file1/... and ./charts/file2/...
+```
+
+---
+
+## 📊 Intelligent Chart Generation
+
+**Fully automated** - Automatically selects optimal chart types and configurations based on video characteristics!
+
+### **🎯 Automatic Chart Selection**
+- **Short videos (< 5 minutes)**: Detailed enhanced dashboard charts - shows complete info panels and precise analysis
+- **Long videos (≥ 5 minutes)**: Standard combined charts - optimized three-in-one view suitable for lengthy videos
+- **Multiple file processing**: Automatically creates independent subdirectories to avoid filename conflicts
+
+### **🎨 Chart Features**
+- **Professional layouts**: Adaptive grid layouts with optimal information density
+- **High-quality output**: PNG format, 150 DPI, suitable for reports and presentations
+- **Smart color schemes**: Professional color palettes supporting both dark and light themes
+- **Complete information**: File info, encoding parameters, quality assessment, performance metrics
+
+### **📁 Output Organization**
+```
+./charts/                    # Single file output
+├── enhanced_dashboard_*.png  # Short video detailed charts
+└── combined_analysis_*.png   # Standard combined charts
+
+./charts/                    # Multiple file output
+├── video1/
+│   └── enhanced_dashboard_*.png
+└── video2/
+    └── combined_analysis_*.png
+```
+
+---
 
 ## 🎛 Command Reference
 
-### **🎯 Core Commands (4 Total)**
+### **🎯 Single Command - Ultra-Simplified Design**
 
-#### **1. `info` - File Information**
 ```bash
-python -m video_analytics info <file1> [file2] [file3]...
+python -m video_analytics <file1> [file2] [file3]... [OPTIONS]
 ```
-- Display comprehensive video metadata and file information
-- **Multi-file support**: Process multiple files in one command
-- **Options**: `--verbose` for detailed information
 
-#### **2. `analyze` - Comprehensive Analysis**  
+**Function**: Automatic analysis + automatic professional chart generation
+
+**Input Support**:
+- Local files: `video.mp4`, `/path/to/video.mp4`
+- HTTP URLs: `https://example.com/video.mp4`  
+- HLS streams: `https://stream.example.com/playlist.m3u8`
+- Wildcards: `*.mp4`, `video*.mp4`
+- Multiple files: `video1.mp4 video2.mp4 video3.mp4`
+
+**Parameters** (only 2):
+- `--output PATH` or `-o PATH` - Specify output directory (default: `./charts`)
+- `--verbose` or `-v` - Show detailed analysis process and metrics
+
+### **🧠 Intelligent Automation Behavior**
+
+✅ **Analysis types**: Automatically enables video + audio + fps triple analysis  
+✅ **Sampling optimization**: Auto-optimizes sampling intervals based on video duration  
+✅ **Chart selection**: Short videos→detailed charts, long videos→combined charts  
+✅ **Parallel processing**: Automatically uses optimal number of worker threads  
+✅ **Cache management**: HTTP/HLS streams automatically cached to avoid repeated downloads  
+✅ **Directory organization**: Multiple files automatically create subdirectory structure  
+✅ **Error handling**: Intelligently skips failed files, continues processing others
+
+---
+
+## 🔧 What Makes This Tool Special
+
+### **🎯 Focused Purpose**
+- **Not another video analyzer** - ffprobe already does that perfectly
+- **Specialized in visualization** - Generate professional charts that ffprobe can't
+- **Perfect complement** - Use ffprobe for info, use this for charts
+
+### **🚀 Zero Learning Curve**
+- **One command to remember**: `python -m video_analytics <files>`
+- **No parameter confusion** - Everything is intelligently automated
+- **Works immediately** - No configuration files or setup needed
+
+### **📊 Professional Results**
+- **Publication-ready charts** - High-resolution, professionally styled
+- **Comprehensive analysis** - Video bitrate, audio quality, frame rate in one chart  
+- **Smart layouts** - Automatically optimized for different video characteristics
+
+---
+
+## 🛠 Technical Details
+
+### **System Requirements**
+- **Python 3.8+** - Required for modern type hints and dataclass support
+- **FFmpeg** - Essential for video analysis functionality
+- **4GB+ RAM** - Recommended for processing videos longer than 3 hours
+- **Adequate disk space** - For chart generation and temporary files
+
+### **Supported Input Formats**
+- **Video files**: MP4, AVI, MKV, MOV, WMV, FLV, and more (anything ffprobe supports)
+- **HTTP URLs**: Direct links to video files
+- **HLS streams**: M3U8 playlist URLs for live streams
+- **Batch processing**: Multiple files, wildcards, mixed local/remote sources
+
+### **Performance Features**
+- **Parallel processing** - Video, audio, and FPS analysis run simultaneously
+- **Smart sampling** - Automatically adjusts analysis intervals based on video length
+- **Memory optimization** - Efficient processing of large video files
+- **Caching system** - Downloaded streams cached for repeated analysis
+
+---
+
+## 📈 Example Outputs
+
+The tool generates different chart types based on your video:
+
+- **Short videos (< 5 min)**: Enhanced dashboard with detailed panels
+- **Medium videos (5-60 min)**: Combined analysis chart with three subplots  
+- **Long videos (> 60 min)**: Memory-optimized charts with smart sampling
+
+All charts include:
+- Video bitrate analysis over time
+- Audio quality assessment and bitrate
+- Frame rate consistency and drop detection
+- File information and encoding details
+- Quality metrics and recommendations
+
+---
+
+## 💡 Quick Tips
+
+### **Best Practices**
 ```bash
-python -m video_analytics analyze <file1> [file2] [file3]...
+# For single video analysis
+python -m video_analytics video.mp4
+
+# For project-wide batch analysis
+python -m video_analytics /path/to/project/*.mp4 --output ./project-analysis
+
+# For detailed troubleshooting
+python -m video_analytics problematic_video.mp4 --verbose
 ```
-- **Parallel analysis**: Video bitrate + Audio quality + FPS analysis simultaneously
-- **Smart optimization**: Auto-configured intervals based on video duration
-- **Universal input**: Local files, HTTP URLs, HLS streams
-- **Options**: 
-  - `--type video,audio,fps` - Select specific analysis types (default: all)
-  - `--output <directory>` - Export results and data
-  - `--verbose` - Show detailed progress and statistics
 
-#### **3. `chart` - Visualization**
-```bash
-python -m video_analytics chart <file1> [file2] [file3]...
-```
-- Generate professional analysis charts with smart defaults
-- **Automatic multi-file organization**: Creates subdirectories for batch processing
-- **Chart Types**:
-  - `--type combined` - Single 3-subplot comprehensive chart (default)
-  - `--type summary` - Enhanced dashboard with quality panels and metrics overview
-  - `--type all` - Complete report with 5 individual charts
-- **Options**: `--output <directory>`, `--verbose`
+### **Common Use Cases**
+- **Quality assurance** - Analyze encoded videos for bitrate consistency
+- **Stream analysis** - Monitor live streams for quality issues
+- **Batch processing** - Analyze entire video libraries
+- **Performance debugging** - Identify frame drops and quality issues
 
-#### **4. `cache` - Cache Management**
-```bash
-python -m video_analytics cache <operation>
-```
-- **Operations**:
-  - `list` - Show cached downloads
-  - `info` - Display cache statistics  
-  - `clear` - Remove all cached files
-  - `remove <url>` - Remove specific cached file
-
-### **🛠 System Commands**
-- `check` - Verify FFmpeg installation and system dependencies
-
-### **🎚 Global Options**
-- `--output <directory>` - Custom output directory
-- `--verbose` - Show detailed information and progress
-- Support for **multiple files** in all commands
-- Support for **HTTP URLs and HLS streams**
-
-## 🏗 Architecture
-
-### Entry Points
-- **Primary**: `python -m video_analytics` → `video_analytics/__main__.py`
-- **Console Script**: `video-analytics` command (after installation)
-- **Legacy**: `video_analytics/main.py` (backwards compatibility)
-
-### Core Components
-- **CLI Layer** (`video_analytics.cli`): Typer-based command interface
-- **File Processing** (`video_analytics.core`): FFmpeg integration and metadata handling
-- **Analysis Engines** (`video_analytics.core`): Bitrate, audio, and FPS analyzers
-- **⚡ Parallel Engine** (`video_analytics.core.parallel_analyzer`): Concurrent analysis coordinator
-- **Visualization** (`video_analytics.visualization`): Matplotlib-based chart generation
-- **Configuration** (`video_analytics.utils.config`): User settings management
-
-### Technology Stack
-- **Python 3.8+** - Core language
-- **FFmpeg/ffprobe** - Video analysis backend
-- **ffmpeg-python** - Python FFmpeg interface
-- **matplotlib** - Chart generation
-- **typer** - Modern CLI framework
-- **rich** - Enhanced terminal output
-- **tqdm** - Progress indicators
-
-## 🎥 Supported Formats
-
-The tool supports all video formats that FFmpeg can process, including:
-- MP4, AVI, MKV, MOV, WMV
-- WebM, FLV, 3GP, M4V
-- And many more...
-
-## ⚡ Performance
-
-### **🚀 Default Optimization**
-- **Automatic Parallel Processing**: 3x faster than sequential analysis with zero configuration
-- **Smart Sampling Intervals**: Auto-optimized based on video duration (no manual tuning needed)
-- **Memory Efficient**: Streaming processing approach handles 3+ hour videos smoothly
-- **Intelligent Caching**: Download caching for HTTP/HLS streams
-
-### **📊 Performance Comparison**
-| Video Length | Traditional Tools | Video Analytics | Speed Improvement |
-|-------------|------------------|-----------------|-------------------|
-| 30 minutes  | 2-3 minutes      | **45 seconds**  | **4x faster** |
-| 2 hours     | 8-12 minutes     | **3-4 minutes** | **3x faster** |
-| 5+ hours    | 30+ minutes      | **8-10 minutes**| **3x faster** |
-
-### **🎯 Zero-Configuration Benefits**
-- **Works immediately**: No setup, configuration files, or parameter tuning required
-- **Smart defaults**: Optimal settings automatically chosen for each video
-- **Universal compatibility**: Handles all video formats, URLs, and streaming protocols
-
-## 🔍 Error Handling
-
-- **Dependency Checking**: Automatic FFmpeg availability verification
-- **File Validation**: Pre-processing file format and accessibility checks
-- **Graceful Degradation**: Simple mode when FFmpeg is not available
-- **Detailed Error Messages**: Clear feedback for troubleshooting
+---
 
 ## 🤝 Contributing
 
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
+This tool focuses on doing one thing exceptionally well: generating professional video analysis charts. 
 
-## 📝 License
+If you have suggestions for chart improvements, visualization enhancements, or smart automation features, contributions are welcome!
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+---
 
-## 🐛 Troubleshooting
+## 📄 License
 
-### Common Issues
+[License information here]
 
-**FFmpeg not found:**
-```bash
-# Install FFmpeg first
-brew install ffmpeg  # macOS
-sudo apt install ffmpeg  # Ubuntu/Debian
+---
 
-# Verify installation
-python -m video_analytics check
-```
+## 🔗 Related Tools
 
-**Memory issues with large files:**
-```bash
-# Increase sampling interval
-python -m video_analytics bitrate large_video.mp4 --interval 10.0
-```
+- **ffprobe** - For detailed video information and metadata
+- **ffmpeg** - For video processing and conversion  
+- **This tool** - For professional chart visualization of video analysis
 
-**Permission errors:**
-```bash
-# Ensure output directory is writable
-python -m video_analytics bitrate video.mp4 --output ~/Desktop/analysis
-```
-
-## 📈 Examples
-
-### **🎥 Analyzing a Conference Recording**
-
-```bash
-# Complete analysis in one command (recommended)
-python -m video_analytics analyze conference.mp4 --output ./conference_analysis --verbose
-
-# Generate comprehensive charts
-python -m video_analytics chart conference.mp4 --type all --output ./conference_analysis
-
-# Quick overview
-python -m video_analytics info conference.mp4
-python -m video_analytics chart conference.mp4 --type summary
-```
-
-### **📂 Batch Processing Multiple Videos**
-
-```bash
-# Analyze all videos in directory (automatic batch processing)
-python -m video_analytics analyze *.mp4 --output ./batch_results
-
-# Generate charts for multiple videos (creates subdirectories automatically)
-python -m video_analytics chart video1.mp4 video2.mp4 video3.mp4 --output ./charts
-
-# Mixed file types and URLs
-python -m video_analytics analyze local_video.mp4 https://example.com/remote_video.mp4
-```
-
-### **🌐 URL and Streaming Support**
-
-```bash
-# Analyze remote HTTP video
-python -m video_analytics analyze https://example.com/video.mp4 --verbose
-
-# HLS streaming analysis
-python -m video_analytics analyze https://stream.example.com/playlist.m3u8
-
-# Mixed local and remote analysis
-python -m video_analytics analyze local.mp4 https://remote.com/video.mp4 --output ./mixed_results
-```
-
-### **💾 Data Export and Detailed Analysis**
-
-```bash
-# Export analysis data for external processing
-python -m video_analytics analyze video.mp4 --output ./detailed_analysis --verbose
-
-# Full report generation
-python -m video_analytics chart video.mp4 --type all --output ./full_report
-```
-
-## 🎯 Why Choose Video Analytics?
-
-### **🏆 Compared to Other Tools**
-- **Simplified Workflow**: 4 commands vs 20+ in traditional tools
-- **Zero Learning Curve**: Works immediately without configuration
-- **Built-in Intelligence**: Auto-optimization instead of manual parameter tuning
-- **Universal Support**: Local files, URLs, and streaming - all in one tool
-- **Modern CLI**: Beautiful output, progress bars, and error handling
-
-### **⚡ Performance Advantages**
-- **Automatic Parallel Processing**: No manual setup required for 3x speed boost
-- **Smart Memory Management**: Efficiently handles large videos (3+ hours)
-- **Intelligent Sampling**: Optimal intervals chosen automatically
-- **Streaming Support**: Direct analysis of HTTP/HLS streams without downloading
-
-### **🛠 Developer Friendly**
-- **Rich Data Export**: JSON/CSV for integration with other tools
-- **Comprehensive Charts**: Publication-ready visualizations
-- **Robust Error Handling**: Clear messages and graceful fallbacks
-- **Cross-Platform**: Works on Windows, macOS, and Linux
+**Perfect workflow**: Use ffprobe for info → Use this tool for charts → Use ffmpeg for processing
