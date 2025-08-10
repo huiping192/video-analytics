@@ -22,74 +22,98 @@ console = Console()
 
 
 def info_command(
-    input_path: str = typer.Argument(..., help="Video file path, HTTP URL, or HLS stream URL"),
-    verbose: bool = typer.Option(False, "--verbose", "-v", help="Show verbose output"),
-    simple: bool = typer.Option(False, "--simple", "-s", help="Use simple mode (no FFmpeg)"),
-    force_download: bool = typer.Option(False, "--force-download", help="Force re-download even if cached"),
-    max_workers: int = typer.Option(10, "--workers", help="Maximum download threads for HLS")
+    input_paths: List[str] = typer.Argument(..., help="Video file paths, HTTP URLs, or HLS stream URLs"),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Show verbose output")
 ):
     """
-    Show basic information about the video file, URL, or HLS stream.
+    Show basic information about video files, URLs, or HLS streams.
+    Supports multiple files and automatically handles downloads.
     """
-    console.print(f"[blue]Analyzing input:[/blue] {input_path}")
+    console.print(f"[blue]Analyzing {len(input_paths)} file(s)...[/blue]")
     
-    if simple:
-        # Use simple mode for local files only
-        from ..core.simple_processor import SimpleProcessedFile
-        from ..utils.validators import is_url
+    successful_files = []
+    failed_files = []
+    
+    for i, input_path in enumerate(input_paths, 1):
+        console.print(f"\n[blue]File {i}/{len(input_paths)}:[/blue] {input_path}")
         
-        if is_url(input_path):
-            console.print("[red]Simple mode not supported for URLs/HLS streams[/red]")
-            raise typer.Exit(1)
+        try:
+            # Use full processing mode with smart defaults
+            processed_file = safe_process_file(input_path)
+            if processed_file is None:
+                console.print("[red]Input processing failed[/red]")
+                failed_files.append(input_path)
+                continue
             
-        processed_file = SimpleProcessedFile(input_path)
-    else:
-        # Use full processing mode with download support
-        processed_file = safe_process_file(
-            input_path, 
-            force_download=force_download,
-            max_workers=max_workers
-        )
-        if processed_file is None:
-            console.print("[red]Input processing failed[/red]")
-            raise typer.Exit(1)
+            metadata = processed_file.load_metadata()
+            successful_files.append(metadata)
+            
+            # Create info table for this file
+            if len(input_paths) == 1:
+                table_title = "Video File Information"
+            else:
+                import os
+                table_title = f"File Info: {os.path.basename(input_path)}"
+            
+            table = Table(title=table_title)
+            table.add_column("Property", style="cyan", no_wrap=True)
+            table.add_column("Value", style="magenta")
+            
+            # Basic information
+            table.add_row("File Path", metadata.file_path)
+            if metadata.original_url:
+                url_display = metadata.original_url
+                if len(url_display) > 80:
+                    url_display = url_display[:77] + "..."
+                table.add_row("Original URL", url_display)
+                table.add_row("Cached", "Yes" if metadata.is_cached else "No")
+            table.add_row("File Size", f"{metadata.file_size / 1024 / 1024:.1f} MB")
+            table.add_row("Duration", f"{metadata.duration:.1f} s ({metadata.duration/60:.1f} min)")
+            table.add_row("Container Format", metadata.format_name)
+            table.add_row("Overall Bitrate", f"{metadata.bit_rate / 1000:.0f} kbps")
+            
+            # Video information
+            table.add_row("", "")  # spacer
+            table.add_row("[bold]Video[/bold]", "")
+            table.add_row("Codec", metadata.video_codec)
+            table.add_row("Resolution", f"{metadata.width}x{metadata.height}")
+            table.add_row("Frame Rate", f"{metadata.fps:.2f} fps")
+            if metadata.video_bitrate > 0:
+                table.add_row("Video Bitrate", f"{metadata.video_bitrate / 1000:.0f} kbps")
+            
+            # Audio information  
+            table.add_row("", "")  # spacer
+            table.add_row("[bold]Audio[/bold]", "")
+            table.add_row("Codec", metadata.audio_codec)
+            table.add_row("Channels", str(metadata.channels))
+            table.add_row("Sample Rate", f"{metadata.sample_rate} Hz")
+            if metadata.audio_bitrate > 0:
+                table.add_row("Audio Bitrate", f"{metadata.audio_bitrate / 1000:.0f} kbps")
+            
+            console.print(table)
+            
+        except Exception as e:
+            console.print(f"[red]✗ Failed to analyze {input_path}: {e}[/red]")
+            failed_files.append(input_path)
     
-    metadata = processed_file.load_metadata()
-    
-    # Create info table
-    table = Table(title="Video File Information")
-    table.add_column("Property", style="cyan", no_wrap=True)
-    table.add_column("Value", style="magenta")
-    
-    # Basic information
-    table.add_row("File Path", metadata.file_path)
-    if metadata.original_url:
-        table.add_row("Original URL", metadata.original_url[:60] + "..." if len(metadata.original_url) > 60 else metadata.original_url)
-        table.add_row("Cached", "Yes" if metadata.is_cached else "No")
-    table.add_row("File Size", f"{metadata.file_size / 1024 / 1024:.1f} MB")
-    table.add_row("Duration", f"{metadata.duration:.1f} s ({metadata.duration/60:.1f} min)")
-    table.add_row("Container Format", metadata.format_name)
-    table.add_row("Overall Bitrate", f"{metadata.bit_rate / 1000:.0f} kbps")
-    
-    # Video information
-    table.add_row("", "")  # spacer
-    table.add_row("[bold]Video[/bold]", "")
-    table.add_row("Codec", metadata.video_codec)
-    table.add_row("Resolution", f"{metadata.width}x{metadata.height}")
-    table.add_row("Frame Rate", f"{metadata.fps:.2f} fps")
-    if metadata.video_bitrate > 0:
-        table.add_row("Video Bitrate", f"{metadata.video_bitrate / 1000:.0f} kbps")
-    
-    # Audio information  
-    table.add_row("", "")  # spacer
-    table.add_row("[bold]Audio[/bold]", "")
-    table.add_row("Codec", metadata.audio_codec)
-    table.add_row("Channels", str(metadata.channels))
-    table.add_row("Sample Rate", f"{metadata.sample_rate} Hz")
-    if metadata.audio_bitrate > 0:
-        table.add_row("Audio Bitrate", f"{metadata.audio_bitrate / 1000:.0f} kbps")
-    
-    console.print(table)
+    # Summary for multiple files
+    if len(input_paths) > 1:
+        console.print(f"\n[bold]Summary[/bold]")
+        console.print(f"[green]Successful:[/green] {len(successful_files)}/{len(input_paths)}")
+        
+        if failed_files:
+            console.print(f"[red]Failed:[/red] {len(failed_files)} files")
+            if verbose:
+                for failed_file in failed_files:
+                    console.print(f"  [red]✗[/red] {failed_file}")
+        
+        if successful_files and verbose:
+            # Show aggregate stats
+            total_size = sum(m.file_size for m in successful_files)
+            total_duration = sum(m.duration for m in successful_files)
+            console.print(f"\n[cyan]Totals:[/cyan]")
+            console.print(f"Size: {total_size / 1024 / 1024:.1f} MB")
+            console.print(f"Duration: {total_duration/60:.1f} minutes")
     
     if verbose:
         console.print("\n[green]✓ File analysis complete[/green]")
@@ -626,7 +650,7 @@ def batch_fps_command(
 
 
 def chart_command(
-    input_path: str = typer.Argument(..., help="Video file path, HTTP URL, or HLS stream URL"),
+    input_paths: List[str] = typer.Argument(..., help="Video file paths, HTTP URLs, or HLS stream URLs"),
     output_dir: str = typer.Option("./charts", "--output", "-o", help="Charts output directory"),
     chart_type: str = typer.Option("combined", "--type", "-t", help="Chart type: video, audio, fps, combined, summary, all"),
     config_type: str = typer.Option("default", "--config", "-c", help="Chart config: default, high_res, compact"),
@@ -642,197 +666,124 @@ def chart_command(
     """
     Generate video analysis charts.
     """
-    console.print(f"[blue]Generating charts for:[/blue] {input_path}")
-    console.print(f"Type: {chart_type}, Config: {config_type}{' (enhanced)' if enhanced else ''}")
+    console.print(f"[blue]Generating {chart_type} charts for {len(input_paths)} file(s)...[/blue]")
     
-    # Auto-optimize intervals for HLS
-    from ..utils.validators import is_hls_url
-    if is_hls_url(input_path):
-        # Use larger intervals for HLS streams
-        if video_interval == 30.0:  # Default value
-            video_interval = 120.0  # 2 minutes
-        if audio_interval == 15.0:  # Default value
-            audio_interval = 60.0   # 1 minute
-        if fps_interval == 10.0:  # Default value
-            fps_interval = 60.0     # 1 minute
-        console.print("[dim]Auto-optimized sampling intervals for HLS[/dim]")
+    import os
+    os.makedirs(output_dir, exist_ok=True)
     
-    try:
-        # Process video file with download support
-        processed_file = safe_process_file(
-            input_path,
-            force_download=force_download,
-            max_workers=max_workers
-        )
-        if processed_file is None:
-            console.print("[red]Input processing failed[/red]")
-            raise typer.Exit(1)
+    successful_files = []
+    failed_files = []
+    all_chart_paths = []
+    
+    for i, input_path in enumerate(input_paths, 1):
+        console.print(f"\n[blue]Processing {i}/{len(input_paths)}:[/blue] {input_path}")
         
-        # Decide which analyses are needed by chart type
-        need_video = chart_type in ['video', 'combined', 'summary', 'all']
-        need_audio = chart_type in ['audio', 'combined', 'summary', 'all'] 
-        need_fps = chart_type in ['fps', 'combined', 'summary', 'all']
-
-        # Enhanced dashboard requires all analyses
-        if enhanced:
+        try:
+            # Process video file with smart defaults
+            processed_file = safe_process_file(input_path)
+            if processed_file is None:
+                console.print("[red]Input processing failed[/red]")
+                failed_files.append(input_path)
+                continue
+            
+            # Get metadata for optimization
+            metadata = processed_file.load_metadata()
+            
+            # All chart types require all analyses for best results
             need_video = True
-            need_audio = True
+            need_audio = True  
             need_fps = True
-        
-        # Perform required analyses
-        video_analysis = None
-        audio_analysis = None
-        fps_analysis = None
-        
-        if parallel and (need_video or need_audio or need_fps):
-            # Use parallel analysis engine when parallel is enabled and at least one analysis is needed
+            
+            # Run parallel analysis with smart configuration
             import asyncio
-            from ..core.parallel_analyzer import ParallelAnalysisEngine, ParallelConfig
+            from ..core.parallel_analyzer import ParallelAnalysisEngine, create_fast_config
             
-            analysis_types = []
-            if need_video: analysis_types.append("video")
-            if need_audio: analysis_types.append("audio")
-            if need_fps: analysis_types.append("fps")
-            
-            console.print(f"[yellow]Running parallel analysis ({', '.join(analysis_types)}) for chart generation...[/yellow]")
-            
-            # Create parallel config with custom intervals
-            config = ParallelConfig()
-            config.video_interval = video_interval
-            config.audio_interval = audio_interval
-            config.fps_interval = fps_interval
+            config = create_fast_config(metadata.duration)
             config.enable_video = need_video
             config.enable_audio = need_audio
             config.enable_fps = need_fps
             
-            # Run parallel analysis
-            async def run_parallel_analysis():
+            async def run_analysis():
                 engine = ParallelAnalysisEngine(config)
                 return await engine.analyze_all(processed_file)
             
-            combined_result = asyncio.run(run_parallel_analysis())
+            with console.status(f"[bold green]Running analysis for charts..."):
+                combined_result = asyncio.run(run_analysis())
             
             video_analysis = combined_result.video_analysis
             audio_analysis = combined_result.audio_analysis
             fps_analysis = combined_result.fps_analysis
             
-            console.print(f"[green]Parallel analysis completed in {combined_result.execution_time:.1f}s (efficiency: {combined_result.parallel_efficiency:.1%})[/green]")
+            if verbose:
+                console.print(f"[green]Analysis completed in {combined_result.execution_time:.1f}s[/green]")
             
-        else:
-            # Use sequential analysis (original approach)
-            console.print("[dim]Using sequential analysis...[/dim]")
-            
-            if need_video:
-                console.print("[yellow]Analyzing video bitrate...[/yellow]")
-                video_analyzer = VideoBitrateAnalyzer(sample_interval=video_interval)
-                video_analysis = video_analyzer.analyze(processed_file)
-            
-            if need_audio:
-                console.print("[yellow]Analyzing audio bitrate...[/yellow]")
-                audio_analyzer = AudioBitrateAnalyzer(sample_interval=audio_interval)
-                audio_analysis = audio_analyzer.analyze(processed_file)
-            
-            if need_fps:
-                console.print("[yellow]Analyzing FPS...[/yellow]")
-                fps_analyzer = FPSAnalyzer(sample_interval=fps_interval)
-                fps_analysis = fps_analyzer.analyze(processed_file)
-        
-        # Create chart generator
-        chart_generator = ChartGenerator()
-        
-        # Get chart config
-        if config_type == "high_res":
-            config = ChartStyles.get_high_res_config()
-        elif config_type == "compact":
-            config = ChartStyles.get_compact_config()
-        else:
+            # Create chart generator and config
+            chart_generator = ChartGenerator()
             config = ChartStyles.get_default_config()
-        
-        config.output_dir = output_dir
-        
-        # Generate charts
-        results = {}
-
-        # Enhanced dashboard (always attempt first when requested)
-        if enhanced:
-            if all([video_analysis, audio_analysis, fps_analysis]):
-                # Use enhanced preset to ensure larger canvas and panel layout
-                enhanced_cfg = ChartStyles.get_enhanced_preset(info_level=info_level)
-                enhanced_cfg.output_dir = output_dir
-                enhanced_cfg.title = config.title or f"Enhanced Video Analysis - {os.path.basename(input_path)}"
-
-                # Load metadata for info panels
-                metadata = processed_file.load_metadata()
-                enhanced_path = chart_generator.generate_enhanced_chart(
-                    metadata, video_analysis, audio_analysis, fps_analysis, enhanced_cfg
-                )
-                results['enhanced'] = enhanced_path
-                console.print(f"✓ Enhanced dashboard generated: {enhanced_path}")
+            
+            # Create subdirectory for each file if processing multiple files
+            if len(input_paths) > 1:
+                file_basename = os.path.splitext(os.path.basename(input_path))[0]
+                file_output_dir = os.path.join(output_dir, file_basename)
+                os.makedirs(file_output_dir, exist_ok=True)
+                config.output_dir = file_output_dir
             else:
-                console.print("[yellow]Enhanced dashboard requested but analysis data is incomplete. Skipping enhanced output.[/yellow]")
+                config.output_dir = output_dir
+            
+            # Generate charts based on type
+            file_chart_paths = []
+            
+            if chart_type == "combined" and all([video_analysis, audio_analysis, fps_analysis]):
+                config.title = f"Combined Analysis - {os.path.basename(input_path)}"
+                chart_path = chart_generator.generate_combined_chart(
+                    video_analysis, audio_analysis, fps_analysis, config
+                )
+                file_chart_paths.append(chart_path)
+                console.print(f"  [green]✓[/green] Combined chart: {os.path.basename(chart_path)}")
+                
+            elif chart_type == "summary" and all([video_analysis, audio_analysis, fps_analysis]):
+                config.title = f"Analysis Summary - {os.path.basename(input_path)}"
+                chart_path = chart_generator.generate_summary_chart(
+                    video_analysis, audio_analysis, fps_analysis, config
+                )
+                file_chart_paths.append(chart_path)
+                console.print(f"  [green]✓[/green] Summary chart: {os.path.basename(chart_path)}")
+                
+            elif chart_type == "all" and all([video_analysis, audio_analysis, fps_analysis]):
+                full_results = chart_generator.generate_full_report(
+                    video_analysis, audio_analysis, fps_analysis, config.output_dir
+                )
+                file_chart_paths.extend(full_results.values())
+                console.print(f"  [green]✓[/green] Full report: {len(full_results)} charts")
+            
+            else:
+                console.print(f"[red]Unable to generate charts: missing analysis data[/red]")
+                failed_files.append(input_path)
+                continue
+            
+            successful_files.append(input_path)
+            all_chart_paths.extend(file_chart_paths)
         
-        if chart_type == "video" and video_analysis:
-            config.title = f"Video Bitrate Analysis - {os.path.basename(input_path)}"
-            chart_path = chart_generator.generate_video_bitrate_chart(video_analysis, config)
-            results['video'] = chart_path
-            console.print(f"✓ Video bitrate chart generated: {chart_path}")
-            
-        elif chart_type == "audio" and audio_analysis:
-            config.title = f"Audio Bitrate Analysis - {os.path.basename(input_path)}"
-            chart_path = chart_generator.generate_audio_bitrate_chart(audio_analysis, config)
-            results['audio'] = chart_path
-            console.print(f"✓ Audio bitrate chart generated: {chart_path}")
-            
-        elif chart_type == "fps" and fps_analysis:
-            config.title = f"FPS Analysis - {os.path.basename(input_path)}"
-            chart_path = chart_generator.generate_fps_chart(fps_analysis, config)
-            results['fps'] = chart_path
-            console.print(f"✓ FPS chart generated: {chart_path}")
-            
-        elif chart_type == "combined" and all([video_analysis, audio_analysis, fps_analysis]):
-            config.title = f"Combined Analysis - {os.path.basename(input_path)}"
-            chart_path = chart_generator.generate_combined_chart(
-                video_analysis, audio_analysis, fps_analysis, config
-            )
-            results['combined'] = chart_path
-            console.print(f"✓ Combined analysis chart generated: {chart_path}")
-            
-        elif chart_type == "summary" and all([video_analysis, audio_analysis, fps_analysis]):
-            config.title = f"Analysis Summary - {os.path.basename(input_path)}"
-            chart_path = chart_generator.generate_summary_chart(
-                video_analysis, audio_analysis, fps_analysis, config
-            )
-            results['summary'] = chart_path
-            console.print(f"✓ Summary chart generated: {chart_path}")
-            
-        elif chart_type == "all" and all([video_analysis, audio_analysis, fps_analysis]):
-            full_results = chart_generator.generate_full_report(
-                video_analysis, audio_analysis, fps_analysis, output_dir
-            )
-            # Merge with any enhanced output
-            results.update(full_results)
-            console.print(f"✓ Full report generated with {len(full_results)} charts")
-        
-        else:
-            console.print(f"[red]Unable to generate chart: missing analysis data or unsupported chart type[/red]")
-            raise typer.Exit(1)
-        
-        # Show results summary
-        if results:
-            table = Table(title="Generated Chart Files")
-            table.add_column("Chart Type", style="cyan")
-            table.add_column("File Path", style="green")
-            
-            for chart_name, chart_path in results.items():
-                table.add_row(chart_name, chart_path)
-            
-            console.print(table)
-            console.print(f"\n[green]✓ Chart generation complete. Saved to: {output_dir}[/green]")
-        
-    except Exception as e:
-        console.print(f"[red]✗ Chart generation failed: {e}[/red]")
-        import traceback
-        console.print(f"[dim]{traceback.format_exc()}[/dim]")
+        except Exception as e:
+            console.print(f"[red]✗ Chart generation failed for {input_path}: {e}[/red]")
+            if verbose:
+                import traceback
+                console.print(f"[dim]{traceback.format_exc()}[/dim]")
+            failed_files.append(input_path)
+    
+    # Final summary
+    console.print(f"\n[bold green]Chart Generation Complete[/bold green]")
+    console.print(f"[green]Successful:[/green] {len(successful_files)}/{len(input_paths)} files")
+    console.print(f"[green]Charts generated:[/green] {len(all_chart_paths)}")
+    console.print(f"[green]Output directory:[/green] {output_dir}")
+    
+    if failed_files:
+        console.print(f"[red]Failed:[/red] {len(failed_files)} files")
+        if verbose:
+            for failed_file in failed_files:
+                console.print(f"  [red]✗[/red] {failed_file}")
+    
+    if not successful_files:
         raise typer.Exit(1)
 
 
@@ -1132,133 +1083,137 @@ def download_command(
         raise typer.Exit(1)
 
 
-def cache_list_command():
-    """List all cached files."""
-    from ..utils.download_cache import get_download_cache
-    
-    cache = get_download_cache()
-    cached_files = cache.list_cached_files()
-    
-    if not cached_files:
-        console.print("[yellow]No cached files found[/yellow]")
-        return
-    
-    # Create cache listing table
-    table = Table(title="Cached Files")
-    table.add_column("Cache Key", style="cyan", no_wrap=True)
-    table.add_column("URL", style="blue")
-    table.add_column("Size (MB)", style="green", justify="right")
-    table.add_column("Duration", style="yellow", justify="right")
-    table.add_column("Format", style="magenta")
-    table.add_column("Downloaded", style="dim")
-    table.add_column("Valid", style="red")
-    
-    for file_info in cached_files:
-        duration_str = f"{file_info['duration_min']:.1f}m" if file_info['duration_min'] > 0 else "-"
-        valid_str = "✓" if file_info['valid'] else "✗"
-        valid_style = "green" if file_info['valid'] else "red"
-        
-        table.add_row(
-            file_info['cache_key'],
-            file_info['url'],
-            str(file_info['size_mb']),
-            duration_str,
-            file_info['format'] or "-",
-            file_info['download_time'],
-            f"[{valid_style}]{valid_str}[/{valid_style}]"
-        )
-    
-    console.print(table)
-    
-    # Show cache info
-    cache_info = cache.get_cache_info()
-    console.print(f"\n[dim]Cache directory: {cache_info['cache_dir']}[/dim]")
-    console.print(f"[dim]Total: {cache_info['valid_files']}/{cache_info['total_files']} files, {cache_info['total_size_mb']} MB ({cache_info['usage_percent']:.1f}% of limit)[/dim]")
-
-
-def cache_clear_command(
-    confirm: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompt")
+def cache_command(
+    operation: str = typer.Argument(..., help="Cache operation: list, clear, info, remove"),
+    url: Optional[str] = typer.Argument(None, help="URL to remove (only for remove operation)"),
+    confirm: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation for clear operation")
 ):
-    """Clear all cached files."""
+    """
+    Manage download cache with unified operations.
+    Operations: list (show cached files), clear (remove all), info (show stats), remove <url>
+    """
     from ..utils.download_cache import get_download_cache
     
     cache = get_download_cache()
-    cache_info = cache.get_cache_info()
     
-    if cache_info['total_files'] == 0:
-        console.print("[yellow]No cached files to clear[/yellow]")
-        return
-    
-    # Show what will be cleared
-    console.print(f"[yellow]This will remove {cache_info['total_files']} cached files ({cache_info['total_size_mb']} MB)[/yellow]")
-    
-    if not confirm:
-        import typer
-        confirm = typer.confirm("Are you sure you want to clear the cache?")
+    if operation == "list":
+        # List all cached files
+        cached_files = cache.list_cached_files()
         
-    if not confirm:
-        console.print("Cache clear cancelled")
-        return
-    
-    try:
-        files_removed, size_freed = cache.clear_cache()
-        console.print(f"[green]✓ Cache cleared: {files_removed} files, {size_freed} MB freed[/green]")
+        if not cached_files:
+            console.print("[yellow]No cached files found[/yellow]")
+            return
         
-    except Exception as e:
-        console.print(f"[red]✗ Failed to clear cache: {e}[/red]")
-        raise typer.Exit(1)
-
-
-def cache_info_command():
-    """Show cache information and statistics."""
-    from ..utils.download_cache import get_download_cache
-    
-    cache = get_download_cache()
-    cache_info = cache.get_cache_info()
-    
-    # Create info table
-    table = Table(title="Cache Information")
-    table.add_column("Property", style="cyan", no_wrap=True)
-    table.add_column("Value", style="magenta")
-    
-    table.add_row("Cache Directory", cache_info['cache_dir'])
-    table.add_row("Total Files", str(cache_info['total_files']))
-    table.add_row("Valid Files", str(cache_info['valid_files']))
-    table.add_row("Total Size", f"{cache_info['total_size_mb']} MB")
-    table.add_row("Size Limit", f"{cache_info['max_size_gb']} GB")
-    table.add_row("Usage", f"{cache_info['usage_percent']:.1f}%")
-    
-    console.print(table)
-    
-    # Check if cleanup needed
-    if cache_info['usage_percent'] > 80:
-        console.print(f"\n[yellow]⚠ Cache usage is high ({cache_info['usage_percent']:.1f}%). Consider cleaning up old files.[/yellow]")
-
-
-def cache_remove_command(
-    url: str = typer.Argument(..., help="URL of cached file to remove")
-):
-    """Remove specific cached file."""
-    from ..utils.download_cache import get_download_cache
-    
-    cache = get_download_cache()
-    
-    # Check if file is cached
-    cached_path = cache.get_cached_file(url)
-    if not cached_path:
-        console.print(f"[yellow]File not found in cache: {url}[/yellow]")
-        return
-    
-    try:
-        success = cache.remove_from_cache(url)
-        if success:
-            console.print(f"[green]✓ Removed from cache: {url[:50]}...[/green]")
-        else:
-            console.print(f"[red]✗ Failed to remove from cache[/red]")
-            raise typer.Exit(1)
+        # Create cache listing table
+        table = Table(title="Cached Files")
+        table.add_column("Cache Key", style="cyan", no_wrap=True)
+        table.add_column("URL", style="blue")
+        table.add_column("Size (MB)", style="green", justify="right")
+        table.add_column("Duration", style="yellow", justify="right")
+        table.add_column("Valid", style="red")
+        
+        for file_info in cached_files:
+            duration_str = f"{file_info['duration_min']:.1f}m" if file_info['duration_min'] > 0 else "-"
+            valid_str = "✓" if file_info['valid'] else "✗"
+            valid_style = "green" if file_info['valid'] else "red"
             
-    except Exception as e:
-        console.print(f"[red]✗ Error removing from cache: {e}[/red]")
+            # Truncate long URLs
+            display_url = file_info['url']
+            if len(display_url) > 60:
+                display_url = display_url[:57] + "..."
+            
+            table.add_row(
+                file_info['cache_key'],
+                display_url,
+                str(file_info['size_mb']),
+                duration_str,
+                f"[{valid_style}]{valid_str}[/{valid_style}]"
+            )
+        
+        console.print(table)
+        
+        # Show summary info
+        cache_info = cache.get_cache_info()
+        console.print(f"\n[dim]Total: {cache_info['valid_files']}/{cache_info['total_files']} files, {cache_info['total_size_mb']} MB[/dim]")
+    
+    elif operation == "clear":
+        # Clear all cached files
+        cache_info = cache.get_cache_info()
+        
+        if cache_info['total_files'] == 0:
+            console.print("[yellow]No cached files to clear[/yellow]")
+            return
+        
+        # Show what will be cleared
+        console.print(f"[yellow]This will remove {cache_info['total_files']} cached files ({cache_info['total_size_mb']} MB)[/yellow]")
+        
+        if not confirm:
+            import typer
+            confirm = typer.confirm("Are you sure you want to clear the cache?")
+            
+        if not confirm:
+            console.print("Cache clear cancelled")
+            return
+        
+        try:
+            files_removed, size_freed = cache.clear_cache()
+            console.print(f"[green]✓ Cache cleared: {files_removed} files, {size_freed} MB freed[/green]")
+            
+        except Exception as e:
+            console.print(f"[red]✗ Failed to clear cache: {e}[/red]")
+            raise typer.Exit(1)
+    
+    elif operation == "info":
+        # Show cache information and statistics
+        cache_info = cache.get_cache_info()
+        
+        # Create info table
+        table = Table(title="Cache Information")
+        table.add_column("Property", style="cyan", no_wrap=True)
+        table.add_column("Value", style="magenta")
+        
+        table.add_row("Cache Directory", cache_info['cache_dir'])
+        table.add_row("Total Files", str(cache_info['total_files']))
+        table.add_row("Valid Files", str(cache_info['valid_files']))
+        table.add_row("Total Size", f"{cache_info['total_size_mb']} MB")
+        table.add_row("Size Limit", f"{cache_info['max_size_gb']} GB")
+        table.add_row("Usage", f"{cache_info['usage_percent']:.1f}%")
+        
+        console.print(table)
+        
+        # Check if cleanup needed
+        if cache_info['usage_percent'] > 80:
+            console.print(f"\n[yellow]⚠ Cache usage is high ({cache_info['usage_percent']:.1f}%). Consider cleaning up old files.[/yellow]")
+    
+    elif operation == "remove":
+        # Remove specific cached file
+        if not url:
+            console.print("[red]URL required for remove operation[/red]")
+            console.print("Usage: video-analytics cache remove <url>")
+            raise typer.Exit(1)
+        
+        # Check if file is cached
+        cached_path = cache.get_cached_file(url)
+        if not cached_path:
+            console.print(f"[yellow]File not found in cache: {url}[/yellow]")
+            return
+        
+        try:
+            success = cache.remove_from_cache(url)
+            if success:
+                display_url = url[:50] + "..." if len(url) > 50 else url
+                console.print(f"[green]✓ Removed from cache: {display_url}[/green]")
+            else:
+                console.print(f"[red]✗ Failed to remove from cache[/red]")
+                raise typer.Exit(1)
+                
+        except Exception as e:
+            console.print(f"[red]✗ Error removing from cache: {e}[/red]")
+            raise typer.Exit(1)
+    
+    else:
+        console.print(f"[red]Unknown cache operation: {operation}[/red]")
+        console.print("Valid operations: list, clear, info, remove")
         raise typer.Exit(1)
 
 
@@ -1673,6 +1628,152 @@ def batch_parallel_command(
         console.print(f"Total analysis time: {total_time:.1f}s")
         console.print(f"Average parallel efficiency: {avg_efficiency:.1%}")
         console.print(f"Files per minute: {len(results) / (total_time / 60):.1f}")
+
+
+def analyze_command(
+    input_paths: List[str] = typer.Argument(..., help="Video file paths, HTTP URLs, or HLS stream URLs"),
+    type_filter: str = typer.Option("all", "--type", "-t", help="Analysis types: video, audio, fps, all (comma-separated)"),
+    output_dir: Optional[str] = typer.Option(None, "--output", "-o", help="Output directory for results"),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Show verbose output")
+):
+    """
+    Run intelligent analysis on video files (default: parallel analysis of all types).
+    Supports single or multiple files, local paths, HTTP URLs, and HLS streams.
+    """
+    import asyncio
+    from ..core.parallel_analyzer import ParallelAnalysisEngine, create_fast_config
+    
+    # Parse analysis types
+    if type_filter.lower() == "all":
+        analysis_types = ["video", "audio", "fps"]
+    else:
+        analysis_types = [t.strip().lower() for t in type_filter.split(",")]
+        valid_types = {"video", "audio", "fps"}
+        invalid_types = set(analysis_types) - valid_types
+        if invalid_types:
+            console.print(f"[red]Invalid analysis types: {', '.join(invalid_types)}[/red]")
+            console.print(f"Valid types: {', '.join(valid_types)}")
+            raise typer.Exit(1)
+    
+    console.print(f"[blue]Analyzing {len(input_paths)} file(s) with types: {', '.join(analysis_types)}[/blue]")
+    
+    # Setup output directory if specified
+    if output_dir:
+        import os
+        os.makedirs(output_dir, exist_ok=True)
+        console.print(f"[green]Output directory:[/green] {output_dir}")
+    
+    results = []
+    failed_files = []
+    
+    for i, input_path in enumerate(input_paths, 1):
+        console.print(f"\n[blue]Processing {i}/{len(input_paths)}:[/blue] {input_path}")
+        
+        try:
+            # Process file with smart defaults
+            processed_file = safe_process_file(input_path)
+            if processed_file is None:
+                console.print(f"[red]✗ Failed to process: {input_path}[/red]")
+                failed_files.append(input_path)
+                continue
+            
+            # Get metadata for smart optimization
+            metadata = processed_file.load_metadata()
+            config = create_fast_config(metadata.duration)
+            
+            # Configure analysis types
+            config.enable_video = "video" in analysis_types
+            config.enable_audio = "audio" in analysis_types
+            config.enable_fps = "fps" in analysis_types
+            
+            # Run parallel analysis
+            async def run_analysis():
+                engine = ParallelAnalysisEngine(config)
+                return await engine.analyze_all(processed_file)
+            
+            with console.status(f"[bold green]Analyzing {i}/{len(input_paths)}..."):
+                result = asyncio.run(run_analysis())
+                results.append(result)
+            
+            # Display results summary
+            console.print(f"[green]✓ Analysis completed in {result.execution_time:.1f}s[/green]")
+            
+            # Show key metrics
+            if result.has_video_analysis and verbose:
+                video = result.video_analysis
+                console.print(f"  Video: {video.average_bitrate/1000000:.1f} Mbps ({video.encoding_type})")
+            
+            if result.has_audio_analysis and verbose:
+                audio = result.audio_analysis
+                console.print(f"  Audio: {audio.average_bitrate/1000:.0f} kbps ({audio.quality_level})")
+            
+            if result.has_fps_analysis and verbose:
+                fps = result.fps_analysis
+                console.print(f"  FPS: {fps.actual_average_fps:.1f} fps ({fps.total_dropped_frames} drops)")
+            
+            # Export data if output directory specified
+            if output_dir:
+                import os
+                from datetime import datetime
+                import json
+                
+                base_name = os.path.splitext(os.path.basename(input_path))[0]
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                
+                # Export summary JSON
+                summary_data = {
+                    "file_path": result.file_path,
+                    "analysis_time": result.analysis_time.isoformat(),
+                    "execution_time": result.execution_time,
+                    "analysis_types": analysis_types
+                }
+                
+                if result.has_video_analysis:
+                    v = result.video_analysis
+                    summary_data["video"] = {
+                        "avg_bitrate_mbps": v.average_bitrate / 1000000,
+                        "encoding_type": v.encoding_type
+                    }
+                
+                if result.has_audio_analysis:
+                    a = result.audio_analysis
+                    summary_data["audio"] = {
+                        "avg_bitrate_kbps": a.average_bitrate / 1000,
+                        "quality_level": a.quality_level
+                    }
+                
+                if result.has_fps_analysis:
+                    f = result.fps_analysis
+                    summary_data["fps"] = {
+                        "avg_fps": f.actual_average_fps,
+                        "dropped_frames": f.total_dropped_frames
+                    }
+                
+                json_path = os.path.join(output_dir, f"{base_name}_analysis_{timestamp}.json")
+                with open(json_path, 'w', encoding='utf-8') as file:
+                    json.dump(summary_data, file, indent=2, ensure_ascii=False)
+                
+                if verbose:
+                    console.print(f"  [green]Exported:[/green] {json_path}")
+        
+        except Exception as e:
+            console.print(f"[red]✗ Analysis failed for {input_path}: {e}[/red]")
+            failed_files.append(input_path)
+    
+    # Final summary
+    console.print(f"\n[bold green]Analysis Complete[/bold green]")
+    console.print(f"[green]Successful:[/green] {len(results)}/{len(input_paths)} files")
+    
+    if failed_files:
+        console.print(f"[red]Failed:[/red] {len(failed_files)} files")
+        if verbose:
+            for failed_file in failed_files:
+                console.print(f"  [red]✗[/red] {failed_file}")
+    
+    if results and verbose:
+        total_time = sum(r.execution_time for r in results)
+        avg_efficiency = sum(r.parallel_efficiency for r in results) / len(results)
+        console.print(f"\n[cyan]Performance:[/cyan] {total_time:.1f}s total, {avg_efficiency:.1%} avg efficiency")
 
 
 def performance_test_command(

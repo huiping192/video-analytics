@@ -6,21 +6,19 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 This is a **fully implemented** Python-based command-line video analysis tool with comprehensive CLI architecture.
 
-**CURRENT STATUS: COMPLETE IMPLEMENTATION** - The project includes comprehensive video analysis capabilities with rich CLI interface, core analysis engines, visualization components, and configuration management.
+**CURRENT STATUS: SIMPLIFIED CLI IMPLEMENTATION** - The project features a dramatically simplified CLI interface from 29 commands to 4 core commands, with intelligent defaults and automatic parallel processing.
 
 **Implemented functionality:**
-- Video bitrate analysis and visualization with configurable sampling intervals
-- Audio bitrate analysis and quality assessment  
-- FPS (frame rate) analysis and drop detection for large video files (3+ hours)
-- **Parallel analysis engine** - Concurrent video/audio/FPS analysis for performance optimization
+- **Unified analyze command** - Intelligent parallel analysis (video+audio+fps) with smart defaults
+- **Multi-file support** - All commands support single or multiple files seamlessly
+- **Automatic optimization** - Smart sampling intervals based on file type and duration
+- **Simplified cache management** - Single cache command with list/clear/info/remove operations
+- **Zero-configuration use** - Works out of the box with optimal settings
 - Rich CLI interface with colored output and progress indicators
-- Chart generation (individual analysis charts, combined views, summary reports)
-- Batch processing capabilities for multiple files
+- Chart generation with automatic chart type selection
 - JSON/CSV data export functionality
 - FFmpeg dependency checking and validation
-- User configuration file management system
-- CLI-based configuration commands
-- **Performance testing and profiling tools**
+- **Performance-optimized by default** - Parallel processing enabled automatically
 
 ## CLI Architecture
 
@@ -29,11 +27,11 @@ This is a **fully implemented** Python-based command-line video analysis tool wi
 - Legacy: `video_analytics/main.py` (backwards compatibility)
 - Console script: `video-analytics` command (from setup.py)
 
-**CLI Structure:**
+**CLI Structure (Simplified):**
 ```
 video_analytics/cli/
-├── main.py       # Typer app setup and main entry point
-└── commands.py   # All command implementations (info, bitrate, audio, fps, etc.)
+├── main.py       # Typer app setup with 4 core commands
+└── commands.py   # Simplified command implementations (info, analyze, chart, cache)
 ```
 
 ## Development Commands
@@ -44,89 +42,67 @@ pip install -e .                 # Development install
 pip install -r requirements.txt  # Install dependencies only
 ```
 
-**Running the CLI:**
+**Running the Simplified CLI:**
 ```bash
-python -m video_analytics --help                    # Main help
+python -m video_analytics --help                    # Main help (now shows 4 core commands)
 python -m video_analytics check                     # Check FFmpeg dependencies
 python main.py --help                               # Alternative entry point
 video-analytics --help                              # If installed globally
 ```
 
-**Basic Analysis Commands:**
+**Simplified Analysis Commands (4 Core Commands):**
 ```bash
-# File information and validation
-python -m video_analytics info <video_file>         # Show video metadata
-python -m video_analytics info <video_file> --simple # Use simple mode (no FFmpeg)
-python -m video_analytics validate <video_file>     # Validate file processing
+# 1. File information (supports multiple files)
+python -m video_analytics info <file1> [file2] [file3]...        # Show video metadata for one or more files
+python -m video_analytics info <file> --verbose                  # Show detailed information
 
-# Individual analysis types (supports local files, HTTP URLs, and HLS streams)
-python -m video_analytics bitrate <input>           # Video bitrate analysis
-python -m video_analytics audio <input>             # Audio bitrate analysis  
-python -m video_analytics fps <input>               # FPS and drop frame analysis
+# 2. Smart analysis (replaces all individual and batch analysis commands)
+python -m video_analytics analyze <file1> [file2] [file3]...     # Parallel analysis (video+audio+fps)
+python -m video_analytics analyze <file> --type video,audio      # Select specific analysis types
+python -m video_analytics analyze <file> --output ./results      # Export results to directory
+python -m video_analytics analyze <file> --verbose               # Show detailed progress
 
-# Examples with different input types:
-python -m video_analytics bitrate /path/to/video.mp4                    # Local file
-python -m video_analytics bitrate https://example.com/video.mp4         # HTTP URL
-python -m video_analytics bitrate https://stream.example.com/live.m3u8  # HLS stream
+# Examples with different input types (all commands support these):
+python -m video_analytics analyze /path/to/video.mp4                    # Local file
+python -m video_analytics analyze https://example.com/video.mp4         # HTTP URL
+python -m video_analytics analyze https://stream.example.com/live.m3u8  # HLS stream
+python -m video_analytics analyze file1.mp4 file2.mp4 file3.mp4        # Multiple files (automatic batch)
 
-# Batch processing
-python -m video_analytics batch_bitrate <file1> <file2> <file3>
-python -m video_analytics batch_audio <file1> <file2> <file3>
-python -m video_analytics batch_fps <file1> <file2> <file3>
+# 3. Chart generation (supports multiple files)
+python -m video_analytics chart <file1> [file2] [file3]...       # Generate charts for one or more files
+python -m video_analytics chart <file> --type combined           # Combined analysis chart
+python -m video_analytics chart <file> --type summary            # Summary chart
+python -m video_analytics chart <file> --type all                # Full report
 
-# Chart generation (supports all input types)
-python -m video_analytics chart <input>             # Combined analysis chart
-python -m video_analytics chart <input> --type summary  # Summary chart
-python -m video_analytics chart <input> --type all     # Full report
-python -m video_analytics chart <input> --enhanced      # Enhanced info-rich dashboard (video+audio+fps)
-python -m video_analytics chart <input> --enhanced --info-level detailed  # Enhanced with detailed panels
-python -m video_analytics batch_chart <file1> <file2>   # Batch chart generation
 
-# Download management
-python -m video_analytics download <hls_url>        # Download HLS stream or HTTP video
-
-# Parallel analysis (NEW)
-python -m video_analytics parallel <input>          # Run all analyses in parallel
-python -m video_analytics batch_parallel <file1> <file2>  # Batch parallel processing
-python -m video_analytics performance_test <input>  # Performance testing and profiling
-```
-
-**Download and Cache Management:**
-```bash
-# Download commands
-python -m video_analytics download <hls_url>            # Download HLS stream
-python -m video_analytics download <http_url> -o video.mp4  # Download HTTP video
-
-# Cache management
+# 4. Cache management (unified operations)
 python -m video_analytics cache list               # List cached downloads
 python -m video_analytics cache info               # Show cache statistics
 python -m video_analytics cache clear              # Clear all cache
 python -m video_analytics cache remove <url>       # Remove specific cached file
 ```
 
-**Configuration Management:**
+**Key Improvements:**
+- **29 commands → 4 commands**: Massive simplification (-86% complexity)
+- **Automatic batch processing**: Multi-file support built into all commands
+- **Parallel by default**: No need for separate parallel commands
+- **Smart defaults**: Optimal settings automatically chosen
+- **Zero configuration**: Works perfectly out of the box
+
+**Simplified Options (3 Core Parameters):**
 ```bash
-# Configuration commands
-python -m video_analytics config show              # Show current configuration
-python -m video_analytics config set interval 5.0 # Set sampling interval
-python -m video_analytics config reset             # Reset to defaults
+--type video,audio,fps   # Select analysis types (default: all)
+--output ./path          # Output directory (default: smart location)
+--verbose               # Show detailed information (default: concise)
 ```
 
-**Common Options:**
-```bash
---interval 10.0          # Sampling interval in seconds
---output ./output        # Output directory
---json output.json       # Export JSON data
---csv output.csv         # Export CSV data  
---verbose               # Show detailed information
---config high_res       # Chart configuration (default, high_res, compact)
---force-download        # Force re-download even if cached
---workers 10            # Maximum download threads for HLS (1-20)
---parallel              # Enable parallel analysis mode for combined operations
---max-workers 3         # Maximum parallel workers for concurrent analysis
---enhanced              # Enable enhanced dashboard in chart command
---info-level detailed   # Info richness for enhanced dashboard (basic|standard|detailed)
-```
+**Smart Defaults (No Configuration Needed):**
+- **Parallel processing**: Always enabled, auto-optimized
+- **Sampling intervals**: Automatically optimized based on file type and duration
+- **Batch processing**: Automatic when multiple files provided
+- **Download caching**: Intelligent caching for HTTP/HLS streams
+- **Output formats**: JSON export available with --output
+- **Chart configuration**: Optimal settings automatically applied
 
 ## Technology Stack (Implemented)
 
@@ -192,18 +168,18 @@ python -m video_analytics config reset             # Reset to defaults
 
 ## Key Implementation Notes
 
-When working with this project:
+When working with the simplified CLI:
 
 1. **FFmpeg dependency** - Always check FFmpeg availability first with `python -m video_analytics check`
-2. **HLS and URL support** - Seamless support for local files, HTTP URLs, and HLS streams
-3. **Large file optimization** - Auto-optimized sampling intervals for HLS streams (1-3 hour videos)
-4. **Download caching** - Intelligent caching prevents re-downloading large HLS streams
-5. **Concurrent downloads** - Multi-threaded HLS segment downloading for faster processing
-6. **Parallel analysis** - Use `parallel` command for concurrent video/audio/FPS analysis
-7. **Performance profiling** - Use `performance_test` command for detailed performance analysis
-8. **Error handling** - Comprehensive error handling with fallback modes and user-friendly messages
-9. **Memory efficiency** - Streaming processing and temporary file management for large videos
-10. **Export capabilities** - All analysis results can be exported to JSON/CSV formats
+2. **Universal input support** - All commands seamlessly support local files, HTTP URLs, and HLS streams
+3. **Automatic optimization** - Smart sampling intervals based on file type and duration (no manual tuning needed)
+4. **Intelligent caching** - Automatic download caching for HTTP/HLS streams
+5. **Default parallel processing** - All analysis uses optimized parallel execution automatically
+6. **Multi-file processing** - Built-in batch processing when multiple files are provided
+7. **Zero configuration** - Works optimally out of the box without any setup
+8. **Smart error handling** - Comprehensive error handling with user-friendly messages
+9. **Memory efficient** - Streaming processing for large videos with automatic optimization
+10. **Export capabilities** - JSON export available via --output directory
 
 ## Development Workflow
 
