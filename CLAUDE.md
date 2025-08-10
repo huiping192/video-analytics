@@ -78,6 +78,8 @@ python -m video_analytics batch_fps <file1> <file2> <file3>
 python -m video_analytics chart <input>             # Combined analysis chart
 python -m video_analytics chart <input> --type summary  # Summary chart
 python -m video_analytics chart <input> --type all     # Full report
+python -m video_analytics chart <input> --enhanced      # Enhanced info-rich dashboard (video+audio+fps)
+python -m video_analytics chart <input> --enhanced --info-level detailed  # Enhanced with detailed panels
 python -m video_analytics batch_chart <file1> <file2>   # Batch chart generation
 
 # Download management
@@ -122,6 +124,8 @@ python -m video_analytics config reset             # Reset to defaults
 --workers 10            # Maximum download threads for HLS (1-20)
 --parallel              # Enable parallel analysis mode for combined operations
 --max-workers 3         # Maximum parallel workers for concurrent analysis
+--enhanced              # Enable enhanced dashboard in chart command
+--info-level detailed   # Info richness for enhanced dashboard (basic|standard|detailed)
 ```
 
 ## Technology Stack (Implemented)

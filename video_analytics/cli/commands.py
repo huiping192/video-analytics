@@ -633,6 +633,8 @@ def chart_command(
     video_interval: float = typer.Option(30.0, "--video-interval", help="Video sampling interval (seconds)"),
     audio_interval: float = typer.Option(15.0, "--audio-interval", help="Audio sampling interval (seconds)"),
     fps_interval: float = typer.Option(10.0, "--fps-interval", help="FPS sampling interval (seconds)"),
+    enhanced: bool = typer.Option(False, "--enhanced", "--info-rich", help="Enable enhanced info-rich dashboard (requires video+audio+fps)"),
+    info_level: str = typer.Option("standard", "--info-level", help="Enhanced info richness: basic, standard, detailed"),
     parallel: bool = typer.Option(True, "--parallel/--no-parallel", help="Use parallel analysis for better performance (default: enabled)"),
     force_download: bool = typer.Option(False, "--force-download", help="Force re-download even if cached"),
     max_workers: int = typer.Option(10, "--workers", help="Maximum download threads for HLS")
@@ -641,7 +643,7 @@ def chart_command(
     Generate video analysis charts.
     """
     console.print(f"[blue]Generating charts for:[/blue] {input_path}")
-    console.print(f"Type: {chart_type}, Config: {config_type}")
+    console.print(f"Type: {chart_type}, Config: {config_type}{' (enhanced)' if enhanced else ''}")
     
     # Auto-optimize intervals for HLS
     from ..utils.validators import is_hls_url
@@ -670,6 +672,12 @@ def chart_command(
         need_video = chart_type in ['video', 'combined', 'summary', 'all']
         need_audio = chart_type in ['audio', 'combined', 'summary', 'all'] 
         need_fps = chart_type in ['fps', 'combined', 'summary', 'all']
+
+        # Enhanced dashboard requires all analyses
+        if enhanced:
+            need_video = True
+            need_audio = True
+            need_fps = True
         
         # Perform required analyses
         video_analysis = None
@@ -744,6 +752,24 @@ def chart_command(
         
         # Generate charts
         results = {}
+
+        # Enhanced dashboard (always attempt first when requested)
+        if enhanced:
+            if all([video_analysis, audio_analysis, fps_analysis]):
+                # Use enhanced preset to ensure larger canvas and panel layout
+                enhanced_cfg = ChartStyles.get_enhanced_preset(info_level=info_level)
+                enhanced_cfg.output_dir = output_dir
+                enhanced_cfg.title = config.title or f"Enhanced Video Analysis - {os.path.basename(input_path)}"
+
+                # Load metadata for info panels
+                metadata = processed_file.load_metadata()
+                enhanced_path = chart_generator.generate_enhanced_chart(
+                    metadata, video_analysis, audio_analysis, fps_analysis, enhanced_cfg
+                )
+                results['enhanced'] = enhanced_path
+                console.print(f"✓ Enhanced dashboard generated: {enhanced_path}")
+            else:
+                console.print("[yellow]Enhanced dashboard requested but analysis data is incomplete. Skipping enhanced output.[/yellow]")
         
         if chart_type == "video" and video_analysis:
             config.title = f"Video Bitrate Analysis - {os.path.basename(input_path)}"
@@ -780,10 +806,12 @@ def chart_command(
             console.print(f"✓ Summary chart generated: {chart_path}")
             
         elif chart_type == "all" and all([video_analysis, audio_analysis, fps_analysis]):
-            results = chart_generator.generate_full_report(
+            full_results = chart_generator.generate_full_report(
                 video_analysis, audio_analysis, fps_analysis, output_dir
             )
-            console.print(f"✓ Full report generated with {len(results)} charts")
+            # Merge with any enhanced output
+            results.update(full_results)
+            console.print(f"✓ Full report generated with {len(full_results)} charts")
         
         else:
             console.print(f"[red]Unable to generate chart: missing analysis data or unsupported chart type[/red]")

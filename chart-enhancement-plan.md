@@ -197,8 +197,8 @@ enhanced_config = ChartConfig(
 - [ ] 4.2 配置选项扩展
 
 ### Phase 5 进度
-- [ ] 5.1 命令行选项
-- [ ] 5.2 帮助文档更新
+- [x] 5.1 命令行选项 ✅（新增 `--enhanced/--info-rich` 与 `--info-level`）
+- [x] 5.2 帮助文档更新 ✅（更新 `CLAUDE.md` 使用说明）
 
 ### Phase 6 进度
 - [ ] 6.1 功能测试
