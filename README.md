@@ -78,7 +78,7 @@ python -m video_analytics https://example.com/video.mp4
 python -m video_analytics https://stream.example.com/playlist.m3u8
 ```
 
-### **⚡ Optional Parameters (Only 2)**
+### **⚡ Optional Parameters (Only 3)**
 
 ```bash
 # Specify output directory
@@ -87,18 +87,26 @@ python -m video_analytics video.mp4 --output ./my-charts
 # Verbose mode (show analysis process and metrics)
 python -m video_analytics video.mp4 --verbose
 
-# Combine both options
-python -m video_analytics video.mp4 --output ./charts --verbose
+# Choose chart type (detailed or combined)
+python -m video_analytics video.mp4 --chart-type combined
+
+# Combine all options
+python -m video_analytics video.mp4 --output ./charts --verbose --chart-type detailed
 ```
 
-### **🧠 Smart Behavior Examples**
+### **🧠 Chart Type Control**
 
 ```bash
-# Short videos (< 5 minutes) → Auto-generate detailed charts
-python -m video_analytics short_clip.mp4        
+# Default behavior - all videos use detailed charts
+python -m video_analytics short_clip.mp4        # → detailed chart
+python -m video_analytics movie.mp4             # → detailed chart
 
-# Long videos (≥ 5 minutes) → Auto-generate optimized charts  
-python -m video_analytics movie.mp4             
+# Force combined charts for any video
+python -m video_analytics movie.mp4 --chart-type combined
+
+# Batch processing with consistent chart type
+python -m video_analytics *.mp4 --chart-type detailed  # All files → detailed
+python -m video_analytics *.mp4 --chart-type combined  # All files → combined
 
 # Multiple files → Auto-create subdirectory structure
 python -m video_analytics file1.mp4 file2.mp4  
@@ -107,13 +115,14 @@ python -m video_analytics file1.mp4 file2.mp4
 
 ---
 
-## 📊 Intelligent Chart Generation
+## 📊 Chart Generation Control
 
-**Fully automated** - Automatically selects optimal chart types and configurations based on video characteristics!
+**User-controlled** - You choose the chart type that best fits your needs!
 
-### **🎯 Automatic Chart Selection**
-- **Short videos (< 5 minutes)**: Detailed enhanced dashboard charts - shows complete info panels and precise analysis
-- **Long videos (≥ 5 minutes)**: Standard combined charts - optimized three-in-one view suitable for lengthy videos
+### **🎯 Chart Type Options**
+- **Detailed charts (`--chart-type detailed`)**: Enhanced dashboard with complete info panels and precise analysis - **DEFAULT**
+- **Combined charts (`--chart-type combined`)**: Optimized three-in-one view, more compact layout
+- **Consistent batch processing**: All files in a batch use the same chart type you specify
 - **Multiple file processing**: Automatically creates independent subdirectories to avoid filename conflicts
 
 ### **🎨 Chart Features**
@@ -154,15 +163,16 @@ python -m video_analytics <file1> [file2] [file3]... [OPTIONS]
 - Wildcards: `*.mp4`, `video*.mp4`
 - Multiple files: `video1.mp4 video2.mp4 video3.mp4`
 
-**Parameters** (only 2):
+**Parameters** (only 3):
 - `--output PATH` or `-o PATH` - Specify output directory (default: `./charts`)
 - `--verbose` or `-v` - Show detailed analysis process and metrics
+- `--chart-type TYPE` - Choose chart type: `detailed` (default) or `combined`
 
 ### **🧠 Intelligent Automation Behavior**
 
 ✅ **Analysis types**: Automatically enables video + audio + fps triple analysis  
 ✅ **Sampling optimization**: Auto-optimizes sampling intervals based on video duration  
-✅ **Chart selection**: Short videos→detailed charts, long videos→combined charts  
+✅ **Chart selection**: Defaults to detailed charts, user can override with `--chart-type`  
 ✅ **Parallel processing**: Automatically uses optimal number of worker threads  
 ✅ **Cache management**: HTTP/HLS streams automatically cached to avoid repeated downloads  
 ✅ **Directory organization**: Multiple files automatically create subdirectory structure  
@@ -213,11 +223,10 @@ python -m video_analytics <file1> [file2] [file3]... [OPTIONS]
 
 ## 📈 Example Outputs
 
-The tool generates different chart types based on your video:
+The tool generates two types of charts based on your choice:
 
-- **Short videos (< 5 min)**: Enhanced dashboard with detailed panels
-- **Medium videos (5-60 min)**: Combined analysis chart with three subplots  
-- **Long videos (> 60 min)**: Memory-optimized charts with smart sampling
+- **Detailed charts (default)**: Enhanced dashboard with detailed info panels - comprehensive analysis display
+- **Combined charts (optional)**: Three-subplot layout with compact view - suitable for quick overview
 
 All charts include:
 - Video bitrate analysis over time
@@ -232,14 +241,17 @@ All charts include:
 
 ### **Best Practices**
 ```bash
-# For single video analysis
+# For single video analysis (detailed charts by default)
 python -m video_analytics video.mp4
 
-# For project-wide batch analysis
-python -m video_analytics /path/to/project/*.mp4 --output ./project-analysis
+# For project-wide batch analysis with consistent chart type
+python -m video_analytics /path/to/project/*.mp4 --output ./project-analysis --chart-type detailed
+
+# For compact overview of multiple videos
+python -m video_analytics *.mp4 --chart-type combined
 
 # For detailed troubleshooting
-python -m video_analytics problematic_video.mp4 --verbose
+python -m video_analytics problematic_video.mp4 --verbose --chart-type detailed
 ```
 
 ### **Common Use Cases**

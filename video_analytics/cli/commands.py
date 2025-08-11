@@ -30,15 +30,15 @@ def create_smart_config(metadata):
         return create_memory_optimized_config()
 
 
-def generate_smart_chart(video_analysis, audio_analysis, fps_analysis, metadata, output_dir, input_path):
-    """Generate best chart type based on video characteristics."""
+def generate_smart_chart(video_analysis, audio_analysis, fps_analysis, metadata, output_dir, input_path, chart_type="detailed"):
+    """Generate specified chart type."""
     chart_generator = ChartGenerator()
     
-    # Auto-select chart type based on video duration and characteristics
-    if metadata.duration < 300:  # Short video - detailed chart
+    # Use user-specified chart type (default: detailed)
+    if chart_type == "detailed":
         config = ChartStyles.get_enhanced_preset(info_level='detailed')
         chart_type_name = "detailed"
-    else:  # Standard combined chart for most videos
+    else:  # combined chart
         config = ChartStyles.get_default_config()
         chart_type_name = "combined"
     
@@ -62,7 +62,8 @@ def generate_smart_chart(video_analysis, audio_analysis, fps_analysis, metadata,
 def generate_command(
     input_paths: List[str] = typer.Argument(..., help="Video file paths, HTTP URLs, or HLS stream URLs"),
     output_dir: str = typer.Option("./charts", "--output", "-o", help="Charts output directory"),
-    verbose: bool = typer.Option(False, "--verbose", "-v", help="Show detailed progress")
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Show detailed progress"),
+    chart_type: str = typer.Option("detailed", "--chart-type", help="Chart type: 'detailed' or 'combined'")
 ):
     """
     Generate professional video analysis charts with smart defaults.
@@ -70,10 +71,15 @@ def generate_command(
     Automatically analyzes video files and generates optimized charts:
     - Auto-detects best analysis settings based on video duration
     - Parallel processing (video + audio + fps analysis) 
-    - Smart chart type selection (detailed for short videos, combined for others)
+    - Default to detailed charts, with option to specify combined charts
     - Supports single/multiple files, HTTP URLs, HLS streams
     - Zero configuration required - works perfectly out of the box
     """
+    
+    # Validate chart type
+    if chart_type not in ["detailed", "combined"]:
+        console.print(f"[red]Error: Invalid chart type '{chart_type}'. Must be 'detailed' or 'combined'.[/red]")
+        raise typer.Exit(1)
     
     # Check dependencies first
     try:
@@ -145,18 +151,19 @@ def generate_command(
                 os.makedirs(file_output_dir, exist_ok=True)
             
             with console.status(f"[bold magenta]📊 Generating smart charts..."):
-                chart_path, chart_type = generate_smart_chart(
+                chart_path, actual_chart_type = generate_smart_chart(
                     combined_result.video_analysis,
                     combined_result.audio_analysis, 
                     combined_result.fps_analysis,
                     metadata,
                     file_output_dir,
-                    input_path
+                    input_path,
+                    chart_type
                 )
             
             # Success summary
             console.print(f"[green]✅ Completed in {combined_result.execution_time:.1f}s[/green]")
-            console.print(f"   📊 Chart type: {chart_type}")
+            console.print(f"   📊 Chart type: {actual_chart_type}")
             console.print(f"   💾 Saved: {os.path.basename(chart_path)}")
             
             if verbose:
